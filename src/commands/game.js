@@ -12,6 +12,10 @@ const {
 } = require('../utils/gameData');
 
 const {
+  getGamePoints
+} = require('../utils/gamePoints');
+
+const {
   playDice
 } = require('../games/dice');
 
@@ -39,25 +43,25 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const user = getUser(
-      interaction.user.id,
-      interaction.user.username
-    );
+    const user =
+      getUser(
+        interaction.user.id,
+        interaction.user.username
+      );
 
     await interaction.reply({
       embeds: [
-        createMenuEmbed(user.points)
+        createMenuEmbed(
+          user.points
+        )
       ],
-      components: createMenuRows()
+      components:
+        createMenuRows()
     });
 
     const message =
       await interaction.fetchReply();
 
-    /*
-     * この /game を実行したユーザー専用
-     * ボタンCollector
-     */
     const collector =
       message.createMessageComponentCollector({
         time: 120000,
@@ -75,7 +79,7 @@ module.exports = {
       async button => {
         try {
           /*
-           * 他人が押した場合
+           * 他人による操作
            */
           if (
             button.user.id !==
@@ -91,9 +95,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * ゲーム選択に戻る
-           * ==========================
+           * ========================
            */
           if (
             button.customId ===
@@ -119,9 +123,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * サイコロ
-           * ==========================
+           * ========================
            */
           if (
             button.customId ===
@@ -130,27 +134,11 @@ module.exports = {
             const game =
               playDice();
 
-            let points = 0;
-            let text = '';
-
-            if (
-              game.result ===
-              'win'
-            ) {
-              points = 10;
-              text =
-                '🎉 あなたの勝ち！';
-            } else if (
-              game.result ===
-              'lose'
-            ) {
-              points = -5;
-              text =
-                '😢 あなたの負け…';
-            } else {
-              text =
-                '🤝 引き分け！';
-            }
+            const points =
+              getGamePoints(
+                'dice',
+                game.result
+              );
 
             const data =
               recordGame({
@@ -177,6 +165,25 @@ module.exports = {
                 }
               });
 
+            let text;
+
+            if (
+              game.result ===
+              'win'
+            ) {
+              text =
+                '🎉 あなたの勝ち！';
+            } else if (
+              game.result ===
+              'lose'
+            ) {
+              text =
+                '😢 あなたの負け…';
+            } else {
+              text =
+                '🤝 引き分け！';
+            }
+
             const embed =
               new EmbedBuilder()
                 .setTitle(
@@ -202,7 +209,7 @@ module.exports = {
                   },
                   {
                     name:
-                      'ポイント',
+                      'ポイント変動',
                     value:
                       formatPoints(
                         points
@@ -233,9 +240,16 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * コイントス
-           * ==========================
+           * ========================
+           *
+           * コイントスは
+           * 「結果を出すだけ」のゲームなので
+           * 今回は引き分け扱い。
+           *
+           * 勝敗を選択する方式に変更する場合は
+           * ここを変更可能。
            */
           if (
             button.customId ===
@@ -244,31 +258,32 @@ module.exports = {
             const result =
               playCoin();
 
-            recordGame({
-              userId:
-                interaction.user.id,
-
-              username:
-                interaction.user.username,
-
-              game:
+            const points =
+              getGamePoints(
                 'coin',
-
-              result:
-                'draw',
-
-              points: 0,
-
-              metadata: {
-                result
-              }
-            });
-
-            const current =
-              getUser(
-                interaction.user.id,
-                interaction.user.username
+                'draw'
               );
+
+            const data =
+              recordGame({
+                userId:
+                  interaction.user.id,
+
+                username:
+                  interaction.user.username,
+
+                game:
+                  'coin',
+
+                result:
+                  'draw',
+
+                points,
+
+                metadata: {
+                  result
+                }
+              });
 
             const embed =
               new EmbedBuilder()
@@ -280,9 +295,18 @@ module.exports = {
                 )
                 .addFields({
                   name:
+                    'ポイント変動',
+                  value:
+                    formatPoints(
+                      points
+                    ),
+                  inline: true
+                }, {
+                  name:
                     '所持ポイント',
                   value:
-                    `${current.points}pt`
+                    `${data.points}pt`,
+                  inline: true
                 })
                 .setColor(
                   0xf1c40f
@@ -299,9 +323,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
-           * じゃんけん選択
-           * ==========================
+           * ========================
+           * じゃんけん
+           * ========================
            */
           if (
             button.customId ===
@@ -373,9 +397,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * じゃんけん結果
-           * ==========================
+           * ========================
            */
           if (
             button.customId.startsWith(
@@ -389,29 +413,15 @@ module.exports = {
               );
 
             const game =
-              playRps(choice);
+              playRps(
+                choice
+              );
 
-            let points = 0;
-            let text = '';
-
-            if (
-              game.result ===
-              'win'
-            ) {
-              points = 15;
-              text =
-                '🎉 勝ち！';
-            } else if (
-              game.result ===
-              'lose'
-            ) {
-              points = -5;
-              text =
-                '😢 負け…';
-            } else {
-              text =
-                '🤝 引き分け！';
-            }
+            const points =
+              getGamePoints(
+                'rps',
+                game.result
+              );
 
             const data =
               recordGame({
@@ -434,9 +444,34 @@ module.exports = {
                     game.player,
 
                   bot:
-                    game.bot
+                    game.bot,
+
+                  playerName:
+                    game.playerName,
+
+                  botName:
+                    game.botName
                 }
               });
+
+            let text;
+
+            if (
+              game.result ===
+              'win'
+            ) {
+              text =
+                '🎉 勝ち！';
+            } else if (
+              game.result ===
+              'lose'
+            ) {
+              text =
+                '😢 負け…';
+            } else {
+              text =
+                '🤝 引き分け！';
+            }
 
             const embed =
               new EmbedBuilder()
@@ -463,7 +498,7 @@ module.exports = {
                   },
                   {
                     name:
-                      'ポイント',
+                      'ポイント変動',
                     value:
                       formatPoints(
                         points
@@ -494,9 +529,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * HIGH
-           * ==========================
+           * ========================
            */
           if (
             button.customId ===
@@ -512,9 +547,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * LOW
-           * ==========================
+           * ========================
            */
           if (
             button.customId ===
@@ -530,9 +565,9 @@ module.exports = {
           }
 
           /*
-           * ==========================
+           * ========================
            * スロット
-           * ==========================
+           * ========================
            */
           if (
             button.customId ===
@@ -541,37 +576,40 @@ module.exports = {
             const game =
               playSlots();
 
+            let result;
             let text;
-            let points;
 
             if (
               game.outcome ===
               'jackpot'
             ) {
+              result =
+                'jackpot';
+
               text =
                 '🎉🎉 JACKPOT!! 🎉🎉';
-
-              points = 50;
             } else if (
               game.outcome ===
               'win'
             ) {
+              result =
+                'win';
+
               text =
                 '🎉 当たり！';
-
-              points = 15;
             } else {
+              result =
+                'lose';
+
               text =
                 '😢 ハズレ…';
-
-              points = -5;
             }
 
-            const result =
-              game.outcome ===
-              'lose'
-                ? 'lose'
-                : 'win';
+            const points =
+              getGamePoints(
+                'slots',
+                result
+              );
 
             const data =
               recordGame({
@@ -608,7 +646,7 @@ module.exports = {
                 .addFields(
                   {
                     name:
-                      'ポイント',
+                      'ポイント変動',
                     value:
                       formatPoints(
                         points
@@ -624,10 +662,10 @@ module.exports = {
                   }
                 )
                 .setColor(
-                  game.outcome ===
+                  result ===
                     'jackpot'
                     ? 0xffd700
-                    : game.outcome ===
+                    : result ===
                         'win'
                       ? 0x00ff00
                       : 0xff0000
@@ -648,10 +686,6 @@ module.exports = {
             error
           );
 
-          /*
-           * まだ応答していない場合のみ
-           * エラーを返す
-           */
           if (
             !button.replied &&
             !button.deferred
@@ -669,11 +703,8 @@ module.exports = {
     );
 
     /*
-     * Collector終了時に
+     * Collector終了時には
      * メッセージを変更しない。
-     *
-     * ここでeditReplyすると、
-     * ゲーム結果画面を勝手に上書きするため。
      */
     collector.on(
       'end',
@@ -687,7 +718,9 @@ module.exports = {
 };
 
 /*
+ * ==========================
  * HIGH / LOW
+ * ==========================
  */
 async function playHighLowGame(
   button,
@@ -695,29 +728,15 @@ async function playHighLowGame(
   interaction
 ) {
   const game =
-    playHighLow(choice);
+    playHighLow(
+      choice
+    );
 
-  let points = 0;
-  let text = '';
-
-  if (
-    game.result ===
-    'win'
-  ) {
-    points = 20;
-    text =
-      '🎉 予想的中！';
-  } else if (
-    game.result ===
-    'lose'
-  ) {
-    points = -5;
-    text =
-      '😢 予想失敗…';
-  } else {
-    text =
-      '🤝 同じ数字でした！';
-  }
+  const points =
+    getGamePoints(
+      'highlow',
+      game.result
+    );
 
   const data =
     recordGame({
@@ -745,6 +764,25 @@ async function playHighLowGame(
           game.second
       }
     });
+
+  let text;
+
+  if (
+    game.result ===
+    'win'
+  ) {
+    text =
+      '🎉 予想的中！';
+  } else if (
+    game.result ===
+    'lose'
+  ) {
+    text =
+      '😢 予想失敗…';
+  } else {
+    text =
+      '🤝 同じ数字でした！';
+  }
 
   const embed =
     new EmbedBuilder()
@@ -780,9 +818,11 @@ async function playHighLowGame(
         },
         {
           name:
-            'ポイント',
+            'ポイント変動',
           value:
-            formatPoints(points),
+            formatPoints(
+              points
+            ),
           inline: true
         },
         {
@@ -808,9 +848,13 @@ async function playHighLowGame(
 }
 
 /*
- * ゲームメニュー
+ * ==========================
+ * メニューEmbed
+ * ==========================
  */
-function createMenuEmbed(points) {
+function createMenuEmbed(
+  points
+) {
   return new EmbedBuilder()
     .setTitle(
       '🎮 まぶ鯖ミニゲーム'
@@ -823,11 +867,12 @@ function createMenuEmbed(points) {
       name:
         '🎲 ゲーム一覧',
       value:
-        '🎲 サイコロ\n' +
-        '🪙 コイントス\n' +
-        '✊ じゃんけん\n' +
-        '🎯 HIGH & LOW\n' +
-        '🎰 スロット'
+        '🎲 サイコロ　+10 / -5\n' +
+        '🪙 コイントス　0pt\n' +
+        '✊ じゃんけん　+15 / -5\n' +
+        '🎯 HIGH & LOW　+20 / -5\n' +
+        '🎰 スロット　+15 / -5\n' +
+        '🎰 JACKPOT　+50'
     })
     .setColor(
       0x5865f2
@@ -835,7 +880,9 @@ function createMenuEmbed(points) {
 }
 
 /*
- * ゲーム選択ボタン
+ * ==========================
+ * メニューボタン
+ * ==========================
  */
 function createMenuRows() {
   const row1 =
@@ -937,7 +984,9 @@ function createMenuRows() {
 }
 
 /*
+ * ==========================
  * 戻るボタン
+ * ==========================
  */
 function createBackButton() {
   return new ActionRowBuilder()
@@ -959,25 +1008,42 @@ function createBackButton() {
 }
 
 /*
+ * ==========================
  * ポイント表示
+ * ==========================
  */
-function formatPoints(points) {
+function formatPoints(
+  points
+) {
   if (points > 0) {
-    return `+${points}pt`;
+    return `📈 +${points}pt`;
   }
 
-  return `${points}pt`;
+  if (points < 0) {
+    return `📉 ${points}pt`;
+  }
+
+  return '➖ 0pt';
 }
 
 /*
- * 結果による色
+ * ==========================
+ * 結果色
+ * ==========================
  */
-function getResultColor(result) {
-  if (result === 'win') {
+function getResultColor(
+  result
+) {
+  if (
+    result === 'win' ||
+    result === 'jackpot'
+  ) {
     return 0x00ff00;
   }
 
-  if (result === 'lose') {
+  if (
+    result === 'lose'
+  ) {
     return 0xff0000;
   }
 

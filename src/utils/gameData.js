@@ -2,27 +2,46 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
-const dataDir = path.join(__dirname, '../data');
+const dataDir =
+  path.join(
+    __dirname,
+    '../data'
+  );
 
 if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, {
-    recursive: true
-  });
+  fs.mkdirSync(
+    dataDir,
+    {
+      recursive: true
+    }
+  );
 }
 
-const db = new Database(
-  path.join(dataDir, 'games.db')
-);
+const db =
+  new Database(
+    path.join(
+      dataDir,
+      'games.db'
+    )
+  );
 
 /*
  * SQLite設定
  */
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
-db.pragma('busy_timeout = 5000');
+db.pragma(
+  'journal_mode = WAL'
+);
+
+db.pragma(
+  'foreign_keys = ON'
+);
+
+db.pragma(
+  'busy_timeout = 5000'
+);
 
 /*
- * テーブル作成
+ * テーブル
  */
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
@@ -71,6 +90,10 @@ db.exec(`
     ON game_logs(game);
 
   CREATE INDEX IF NOT EXISTS
+    idx_game_logs_result
+    ON game_logs(result);
+
+  CREATE INDEX IF NOT EXISTS
     idx_game_logs_created_at
     ON game_logs(created_at);
 `);
@@ -78,44 +101,49 @@ db.exec(`
 /*
  * ユーザー取得
  */
-const getUserStmt = db.prepare(`
-  SELECT *
-  FROM users
-  WHERE user_id = ?
-`);
+const getUserStmt =
+  db.prepare(`
+    SELECT *
+    FROM users
+    WHERE user_id = ?
+  `);
 
 /*
  * ユーザー作成
  */
-const createUserStmt = db.prepare(`
-  INSERT INTO users (
-    user_id,
-    username,
-    points
-  )
-  VALUES (?, ?, 100)
-`);
+const createUserStmt =
+  db.prepare(`
+    INSERT INTO users (
+      user_id,
+      username,
+      points
+    )
+    VALUES (?, ?, 100)
+  `);
 
 /*
  * ユーザー名更新
  */
-const updateUsernameStmt = db.prepare(`
-  UPDATE users
-  SET
-    username = ?,
-    updated_at = unixepoch()
-  WHERE user_id = ?
-`);
+const updateUsernameStmt =
+  db.prepare(`
+    UPDATE users
+    SET
+      username = ?,
+      updated_at = unixepoch()
+    WHERE user_id = ?
+  `);
 
 /*
- * ユーザー存在確認
+ * ユーザーを保証
  */
 function ensureUser(
   userId,
   username = ''
 ) {
   let user =
-    getUserStmt.get(userId);
+    getUserStmt.get(
+      userId
+    );
 
   if (!user) {
     createUserStmt.run(
@@ -124,7 +152,9 @@ function ensureUser(
     );
 
     user =
-      getUserStmt.get(userId);
+      getUserStmt.get(
+        userId
+      );
   }
 
   if (
@@ -137,7 +167,9 @@ function ensureUser(
     );
 
     user =
-      getUserStmt.get(userId);
+      getUserStmt.get(
+        userId
+      );
   }
 
   return user;
@@ -157,10 +189,10 @@ function getUser(
 }
 
 /*
- * ゲーム結果記録
+ * ゲーム結果を記録
  *
- * ポイント変更とログ保存を
- * 1つのTransactionで処理する。
+ * ポイント更新とログ保存を
+ * 必ず同一Transactionで実行する。
  */
 const recordGameTransaction =
   db.transaction(
@@ -187,11 +219,19 @@ const recordGameTransaction =
       let wins = 0;
       let losses = 0;
 
-      if (result === 'win') {
+      /*
+       * jackpotは勝利扱い
+       */
+      if (
+        result === 'win' ||
+        result === 'jackpot'
+      ) {
         wins = 1;
       }
 
-      if (result === 'lose') {
+      if (
+        result === 'lose'
+      ) {
         losses = 1;
       }
 
@@ -232,7 +272,9 @@ const recordGameTransaction =
         points,
         after,
         metadata
-          ? JSON.stringify(metadata)
+          ? JSON.stringify(
+              metadata
+            )
           : null
       );
 
@@ -254,6 +296,26 @@ function recordGame({
   points = 0,
   metadata = null
 }) {
+  if (!game) {
+    throw new Error(
+      'game is required'
+    );
+  }
+
+  if (!result) {
+    throw new Error(
+      'result is required'
+    );
+  }
+
+  if (
+    !Number.isInteger(points)
+  ) {
+    throw new Error(
+      'points must be an integer'
+    );
+  }
+
   return recordGameTransaction({
     userId,
     username,
@@ -265,7 +327,7 @@ function recordGame({
 }
 
 /*
- * 管理者などによるポイント変更
+ * 管理者によるポイント変更
  */
 const adjustPointsTransaction =
   db.transaction(
@@ -288,6 +350,15 @@ const adjustPointsTransaction =
 
       const after =
         before + amount;
+
+      /*
+       * マイナスにならないようにする
+       */
+      if (after < 0) {
+        throw new Error(
+          'ポイントが0未満になるため変更できません'
+        );
+      }
 
       db.prepare(`
         UPDATE users
@@ -345,6 +416,14 @@ function adjustPoints({
   executorId,
   executorName
 }) {
+  if (
+    !Number.isInteger(amount)
+  ) {
+    throw new Error(
+      'amount must be an integer'
+    );
+  }
+
   return adjustPointsTransaction({
     userId,
     username,
@@ -372,9 +451,12 @@ function getRanking(
     FROM users
     ORDER BY
       points DESC,
-      wins DESC
+      wins DESC,
+      games ASC
     LIMIT ?
-  `).all(limit);
+  `).all(
+    limit
+  );
 }
 
 /*
@@ -383,6 +465,7 @@ function getRanking(
 function getGameLogs({
   userId = null,
   game = null,
+  result = null,
   limit = 50
 } = {}) {
   let sql = `
@@ -398,7 +481,9 @@ function getGameLogs({
       AND user_id = ?
     `;
 
-    params.push(userId);
+    params.push(
+      userId
+    );
   }
 
   if (game) {
@@ -406,7 +491,19 @@ function getGameLogs({
       AND game = ?
     `;
 
-    params.push(game);
+    params.push(
+      game
+    );
+  }
+
+  if (result) {
+    sql += `
+      AND result = ?
+    `;
+
+    params.push(
+      result
+    );
   }
 
   sql += `
@@ -414,11 +511,15 @@ function getGameLogs({
     LIMIT ?
   `;
 
-  params.push(limit);
+  params.push(
+    limit
+  );
 
   return db
     .prepare(sql)
-    .all(...params);
+    .all(
+      ...params
+    );
 }
 
 /*
@@ -434,6 +535,7 @@ function getGameStats() {
       SUM(
         CASE
           WHEN result = 'win'
+          OR result = 'jackpot'
           THEN 1
           ELSE 0
         END
@@ -446,6 +548,14 @@ function getGameStats() {
           ELSE 0
         END
       ) AS losses,
+
+      SUM(
+        CASE
+          WHEN result = 'draw'
+          THEN 1
+          ELSE 0
+        END
+      ) AS draws,
 
       COALESCE(
         SUM(points_change),
@@ -468,7 +578,6 @@ function getGameStats() {
 function getGlobalStats() {
   return db.prepare(`
     SELECT
-
       COUNT(*) AS games,
 
       COUNT(
@@ -478,7 +587,29 @@ function getGlobalStats() {
       COALESCE(
         SUM(points_change),
         0
-      ) AS points
+      ) AS points,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN points_change > 0
+            THEN points_change
+            ELSE 0
+          END
+        ),
+        0
+      ) AS points_gained,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN points_change < 0
+            THEN ABS(points_change)
+            ELSE 0
+          END
+        ),
+        0
+      ) AS points_lost
 
     FROM game_logs
 
@@ -497,14 +628,66 @@ function getRecentLogs(
     FROM game_logs
     ORDER BY created_at DESC
     LIMIT ?
-  `).all(limit);
+  `).all(
+    limit
+  );
+}
+
+/*
+ * ユーザーのポイント変動合計
+ */
+function getUserPointStats(
+  userId
+) {
+  return db.prepare(`
+    SELECT
+
+      COUNT(*) AS games,
+
+      COALESCE(
+        SUM(points_change),
+        0
+      ) AS total_change,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN points_change > 0
+            THEN points_change
+            ELSE 0
+          END
+        ),
+        0
+      ) AS gained,
+
+      COALESCE(
+        SUM(
+          CASE
+            WHEN points_change < 0
+            THEN ABS(points_change)
+            ELSE 0
+          END
+        ),
+        0
+      ) AS lost
+
+    FROM game_logs
+
+    WHERE
+      user_id = ?
+      AND game != 'system'
+  `).get(
+    userId
+  );
 }
 
 /*
  * DB終了
  */
 function closeDatabase() {
-  db.close();
+  if (db.open) {
+    db.close();
+  }
 }
 
 module.exports = {
@@ -516,5 +699,6 @@ module.exports = {
   getGameStats,
   getGlobalStats,
   getRecentLogs,
+  getUserPointStats,
   closeDatabase
 };
