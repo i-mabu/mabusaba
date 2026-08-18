@@ -20,30 +20,87 @@ const db = new Database(
   )
 );
 
-db.pragma(
-  'journal_mode = WAL'
-);
-
-db.pragma(
-  'busy_timeout = 5000'
-);
+db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS fixed_messages (
     guild_id TEXT PRIMARY KEY,
     channel_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
-    content TEXT NOT NULL,
+
+    content TEXT,
+
+    embed_title TEXT,
+    embed_description TEXT,
+    embed_color TEXT,
+    embed_data TEXT,
+
     created_by TEXT NOT NULL,
     updated_by TEXT NOT NULL,
-    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-  );
 
-  CREATE INDEX IF NOT EXISTS
-    idx_fixed_messages_channel
-    ON fixed_messages(channel_id);
+    created_at INTEGER NOT NULL
+      DEFAULT (unixepoch()),
+
+    updated_at INTEGER NOT NULL
+      DEFAULT (unixepoch())
+  );
 `);
+
+/*
+ * ==========================
+ * Migration
+ * ==========================
+ *
+ * 既存DBに新しいカラムがない場合に追加。
+ */
+function ensureColumn(
+  table,
+  column,
+  definition
+) {
+  const columns =
+    db.prepare(
+      `PRAGMA table_info(${table})`
+    ).all();
+
+  const exists =
+    columns.some(
+      item =>
+        item.name === column
+    );
+
+  if (!exists) {
+    db.exec(
+      `ALTER TABLE ${table}
+       ADD COLUMN ${column} ${definition}`
+    );
+  }
+}
+
+ensureColumn(
+  'fixed_messages',
+  'embed_title',
+  'TEXT'
+);
+
+ensureColumn(
+  'fixed_messages',
+  'embed_description',
+  'TEXT'
+);
+
+ensureColumn(
+  'fixed_messages',
+  'embed_color',
+  'TEXT'
+);
+
+ensureColumn(
+  'fixed_messages',
+  'embed_data',
+  'TEXT'
+);
 
 const getStmt = db.prepare(`
   SELECT *
@@ -57,10 +114,14 @@ const insertStmt = db.prepare(`
     channel_id,
     message_id,
     content,
+    embed_title,
+    embed_description,
+    embed_color,
+    embed_data,
     created_by,
     updated_by
   )
-  VALUES (?, ?, ?, ?, ?, ?)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
 const updateStmt = db.prepare(`
@@ -69,6 +130,10 @@ const updateStmt = db.prepare(`
     channel_id = ?,
     message_id = ?,
     content = ?,
+    embed_title = ?,
+    embed_description = ?,
+    embed_color = ?,
+    embed_data = ?,
     updated_by = ?,
     updated_at = unixepoch()
   WHERE guild_id = ?
@@ -79,19 +144,38 @@ const deleteStmt = db.prepare(`
   WHERE guild_id = ?
 `);
 
-function getFixedMessage(guildId) {
-  return getStmt.get(guildId) || null;
+/*
+ * ==========================
+ * Get
+ * ==========================
+ */
+function getFixedMessage(
+  guildId
+) {
+  return (
+    getStmt.get(
+      guildId
+    ) || null
+  );
 }
 
+/*
+ * ==========================
+ * Create
+ * ==========================
+ */
 function createFixedMessage({
   guildId,
   channelId,
   messageId,
-  content,
+  content = null,
+  embed = null,
   userId
 }) {
   const existing =
-    getFixedMessage(guildId);
+    getFixedMessage(
+      guildId
+    );
 
   if (existing) {
     throw new Error(
@@ -99,11 +183,29 @@ function createFixedMessage({
     );
   }
 
+  const embedTitle =
+    embed?.title || null;
+
+  const embedDescription =
+    embed?.description || null;
+
+  const embedColor =
+    embed?.color || null;
+
+  const embedData =
+    embed
+      ? JSON.stringify(embed)
+      : null;
+
   insertStmt.run(
     guildId,
     channelId,
     messageId,
     content,
+    embedTitle,
+    embedDescription,
+    embedColor,
+    embedData,
     userId,
     userId
   );
@@ -113,15 +215,23 @@ function createFixedMessage({
   );
 }
 
+/*
+ * ==========================
+ * Update
+ * ==========================
+ */
 function updateFixedMessage({
   guildId,
   channelId,
   messageId,
-  content,
+  content = null,
+  embed = null,
   userId
 }) {
   const existing =
-    getFixedMessage(guildId);
+    getFixedMessage(
+      guildId
+    );
 
   if (!existing) {
     throw new Error(
@@ -129,10 +239,28 @@ function updateFixedMessage({
     );
   }
 
+  const embedTitle =
+    embed?.title || null;
+
+  const embedDescription =
+    embed?.description || null;
+
+  const embedColor =
+    embed?.color || null;
+
+  const embedData =
+    embed
+      ? JSON.stringify(embed)
+      : null;
+
   updateStmt.run(
     channelId,
     messageId,
     content,
+    embedTitle,
+    embedDescription,
+    embedColor,
+    embedData,
     userId,
     guildId
   );
@@ -142,15 +270,47 @@ function updateFixedMessage({
   );
 }
 
+/*
+ * ==========================
+ * Delete
+ * ==========================
+ */
 function deleteFixedMessage(
   guildId
 ) {
-  deleteStmt.run(guildId);
+  deleteStmt.run(
+    guildId
+  );
+}
+
+/*
+ * ==========================
+ * Embed取得
+ * ==========================
+ */
+function getStoredEmbed(
+  fixed
+) {
+  if (
+    !fixed ||
+    !fixed.embed_data
+  ) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(
+      fixed.embed_data
+    );
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {
   getFixedMessage,
   createFixedMessage,
   updateFixedMessage,
-  deleteFixedMessage
+  deleteFixedMessage,
+  getStoredEmbed
 };
