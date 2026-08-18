@@ -27,9 +27,7 @@ const {
 const command = {
   data: new SlashCommandBuilder()
     .setName('welcome')
-    .setDescription(
-      'Welcomeメッセージを管理します'
-    )
+    .setDescription('Welcomeメッセージを管理します')
     .setDefaultMemberPermissions(
       PermissionFlagsBits.Administrator
     )
@@ -37,14 +35,12 @@ const command = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('create')
-        .setDescription(
-          'Welcomeメッセージを作成します'
-        )
+        .setDescription('Welcomeメッセージを作成します')
         .addChannelOption(option =>
           option
             .setName('channel')
             .setDescription(
-              'Welcomeメッセージを送信するチャンネル'
+              'Welcomeを送信するチャンネル'
             )
             .addChannelTypes(
               ChannelType.GuildText,
@@ -57,14 +53,12 @@ const command = {
     .addSubcommand(subcommand =>
       subcommand
         .setName('edit')
-        .setDescription(
-          'Welcomeメッセージを編集します'
-        )
+        .setDescription('Welcomeメッセージを編集します')
         .addChannelOption(option =>
           option
             .setName('channel')
             .setDescription(
-              'Welcomeメッセージを送信するチャンネル'
+              'Welcomeを送信するチャンネル'
             )
             .addChannelTypes(
               ChannelType.GuildText,
@@ -78,7 +72,7 @@ const command = {
       subcommand
         .setName('delete')
         .setDescription(
-          'Welcomeメッセージを削除します'
+          'Welcomeメッセージ設定を削除します'
         )
     )
 
@@ -86,7 +80,7 @@ const command = {
       subcommand
         .setName('show')
         .setDescription(
-          'Welcomeメッセージ設定を確認します'
+          'Welcomeメッセージ設定を表示します'
         )
     ),
 
@@ -97,65 +91,92 @@ const command = {
    */
 
   async execute(interaction) {
-    if (!interaction.guild) {
-      await interaction.reply({
-        content:
-          '❌ このコマンドはサーバー内でのみ使用できます。',
-        flags:
-          MessageFlags.Ephemeral
-      });
+    try {
+      if (!interaction.guild) {
+        await interaction.reply({
+          content:
+            '❌ このコマンドはサーバー内でのみ使用できます。',
+          flags:
+            MessageFlags.Ephemeral
+        });
 
-      return;
-    }
+        return;
+      }
 
-    if (
-      !interaction.memberPermissions?.has(
-        PermissionFlagsBits.Administrator
-      )
-    ) {
-      await interaction.reply({
-        content:
-          '❌ このコマンドは管理者のみ使用できます。',
-        flags:
-          MessageFlags.Ephemeral
-      });
+      if (
+        !interaction.memberPermissions?.has(
+          PermissionFlagsBits.Administrator
+        )
+      ) {
+        await interaction.reply({
+          content:
+            '❌ このコマンドは管理者のみ使用できます。',
+          flags:
+            MessageFlags.Ephemeral
+        });
 
-      return;
-    }
+        return;
+      }
 
-    const subcommand =
-      interaction.options.getSubcommand();
+      const subcommand =
+        interaction.options.getSubcommand();
 
-    switch (subcommand) {
-      case 'create':
+      if (
+        subcommand === 'create'
+      ) {
         await showCreateModal(
           interaction
         );
-        break;
 
-      case 'edit':
+        return;
+      }
+
+      if (
+        subcommand === 'edit'
+      ) {
         await showEditModal(
           interaction
         );
-        break;
 
-      case 'delete':
-        await deleteCommand(
+        return;
+      }
+
+      if (
+        subcommand === 'delete'
+      ) {
+        await handleDelete(
           interaction
         );
-        break;
 
-      case 'show':
-        await showCommand(
+        return;
+      }
+
+      if (
+        subcommand === 'show'
+      ) {
+        await handleShow(
           interaction
         );
-        break;
+
+        return;
+      }
+
+    } catch (error) {
+      console.error(
+        '❌ /welcome error:',
+        error
+      );
+
+      await safeReply(
+        interaction,
+        `Welcomeコマンドでエラーが発生しました。\n\`${error.message}\``
+      );
     }
   },
 
   /*
    * =======================================================
-   * Modal
+   * Modal Handler
    * =======================================================
    */
 
@@ -166,9 +187,14 @@ const command = {
       return false;
     }
 
+    /*
+     * welcome-create:CHANNEL_ID
+     */
+
     if (
-      interaction.customId ===
-      'welcome-create'
+      interaction.customId.startsWith(
+        'welcome-create:'
+      )
     ) {
       await handleCreateModal(
         interaction
@@ -177,9 +203,14 @@ const command = {
       return true;
     }
 
+    /*
+     * welcome-edit:CHANNEL_ID
+     */
+
     if (
-      interaction.customId ===
-      'welcome-edit'
+      interaction.customId.startsWith(
+        'welcome-edit:'
+      )
     ) {
       await handleEditModal(
         interaction
@@ -209,7 +240,7 @@ async function showCreateModal(
   if (existing) {
     await interaction.reply({
       content:
-        '❌ 既にWelcomeメッセージが設定されています。\n' +
+        '❌ このサーバーには既にWelcomeメッセージが設定されています。\n' +
         '`/welcome edit` で編集してください。',
       flags:
         MessageFlags.Ephemeral
@@ -223,14 +254,33 @@ async function showCreateModal(
       'channel'
     );
 
+  if (!channel) {
+    await interaction.reply({
+      content:
+        '❌ チャンネルを指定してください。',
+      flags:
+        MessageFlags.Ephemeral
+    });
+
+    return;
+  }
+
+  /*
+   * Modal
+   */
+
   const modal =
     new ModalBuilder()
       .setCustomId(
-        `welcome-create`
+        `welcome-create:${channel.id}`
       )
       .setTitle(
         '👋 Welcomeメッセージ作成'
       );
+
+  /*
+   * タイトル
+   */
 
   const titleInput =
     new TextInputBuilder()
@@ -244,10 +294,14 @@ async function showCreateModal(
         TextInputStyle.Short
       )
       .setPlaceholder(
-        '🎉 ようこそ！'
+        '🎉 まぶ鯖へようこそ！'
       )
       .setMaxLength(256)
       .setRequired(true);
+
+  /*
+   * 本文
+   */
 
   const descriptionInput =
     new TextInputBuilder()
@@ -255,16 +309,20 @@ async function showCreateModal(
         'welcome-description'
       )
       .setLabel(
-        '本文'
+        '本文（複数行対応）'
       )
       .setStyle(
         TextInputStyle.Paragraph
       )
       .setPlaceholder(
-        'サーバーへようこそ！\nここからルールを確認してください。'
+        'ようこそ {user} さん！\n\n{server} へ参加してくれてありがとうございます！'
       )
       .setMaxLength(4000)
       .setRequired(true);
+
+  /*
+   * 色
+   */
 
   const colorInput =
     new TextInputBuilder()
@@ -272,7 +330,7 @@ async function showCreateModal(
         'welcome-color'
       )
       .setLabel(
-        '色（HEX）'
+        '色（HEX 6桁）'
       )
       .setStyle(
         TextInputStyle.Short
@@ -283,16 +341,9 @@ async function showCreateModal(
       .setValue(
         '5865F2'
       )
+      .setMinLength(6)
       .setMaxLength(6)
       .setRequired(true);
-
-  /*
-   * channel IDはModalのcustomIdに入れる。
-   */
-
-  modal.setCustomId(
-    `welcome-create:${channel.id}`
-  );
 
   modal.addComponents(
     new ActionRowBuilder()
@@ -342,6 +393,10 @@ async function showEditModal(
     return;
   }
 
+  /*
+   * チャンネル変更指定があれば使用
+   */
+
   const selectedChannel =
     interaction.options.getChannel(
       'channel'
@@ -351,17 +406,21 @@ async function showEditModal(
     selectedChannel?.id ||
     welcome.channel_id;
 
+  /*
+   * Embed復元
+   */
+
   const storedEmbed =
     getStoredEmbed(
       welcome
     );
 
-  const title =
+  let title =
     storedEmbed?.title ??
     welcome.embed_title ??
     '';
 
-  const description =
+  let description =
     storedEmbed?.description ??
     welcome.embed_description ??
     '';
@@ -369,7 +428,11 @@ async function showEditModal(
   let color =
     storedEmbed?.color ??
     welcome.embed_color ??
-    0x5865F2;
+    '5865F2';
+
+  /*
+   * 色を文字列化
+   */
 
   if (
     typeof color === 'number'
@@ -380,8 +443,7 @@ async function showEditModal(
         .padStart(
           6,
           '0'
-        )
-        .toUpperCase();
+        );
   }
 
   color =
@@ -389,16 +451,37 @@ async function showEditModal(
       .replace(
         /^#/,
         ''
-      );
+      )
+      .toUpperCase();
 
   if (
-    !/^[0-9a-fA-F]{6}$/.test(
+    !/^[0-9A-F]{6}$/.test(
       color
     )
   ) {
     color =
       '5865F2';
   }
+
+  /*
+   * Discord Modal Inputの制限に合わせる
+   */
+
+  title =
+    String(title).slice(
+      0,
+      256
+    );
+
+  description =
+    String(description).slice(
+      0,
+      4000
+    );
+
+  /*
+   * Modal
+   */
 
   const modal =
     new ModalBuilder()
@@ -422,10 +505,7 @@ async function showEditModal(
       )
       .setMaxLength(256)
       .setValue(
-        String(title).slice(
-          0,
-          256
-        )
+        title || 'Welcome'
       )
       .setRequired(true);
 
@@ -435,17 +515,15 @@ async function showEditModal(
         'welcome-description'
       )
       .setLabel(
-        '本文'
+        '本文（複数行対応）'
       )
       .setStyle(
         TextInputStyle.Paragraph
       )
       .setMaxLength(4000)
       .setValue(
-        String(description).slice(
-          0,
-          4000
-        )
+        description ||
+        'ようこそ {user} さん！'
       )
       .setRequired(true);
 
@@ -455,11 +533,12 @@ async function showEditModal(
         'welcome-color'
       )
       .setLabel(
-        '色（HEX）'
+        '色（HEX 6桁）'
       )
       .setStyle(
         TextInputStyle.Short
       )
+      .setMinLength(6)
       .setMaxLength(6)
       .setValue(
         color
@@ -490,11 +569,13 @@ async function showEditModal(
 
 /*
  * =========================================================
- * Color
+ * Color Parser
  * =========================================================
  */
 
-function parseColor(value) {
+function parseColor(
+  value
+) {
   const color =
     String(value || '')
       .trim()
@@ -519,71 +600,93 @@ function parseColor(value) {
 
 /*
  * =========================================================
- * Create Modal
+ * Create Modal Handler
  * =========================================================
  */
 
 async function handleCreateModal(
   interaction
 ) {
-  const guildId =
-    interaction.guildId;
-
-  const parts =
-    interaction.customId.split(':');
-
-  const channelId =
-    parts[1];
-
-  const existing =
-    getWelcomeMessage(
-      guildId
-    );
-
-  if (existing) {
-    await interaction.reply({
-      content:
-        '❌ 既にWelcomeメッセージが設定されています。',
-      flags:
-        MessageFlags.Ephemeral
-    });
-
-    return;
-  }
-
-  const title =
-    interaction.fields.getTextInputValue(
-      'welcome-title'
-    );
-
-  const description =
-    interaction.fields.getTextInputValue(
-      'welcome-description'
-    );
-
-  const colorInput =
-    interaction.fields.getTextInputValue(
-      'welcome-color'
-    );
-
-  const color =
-    parseColor(
-      colorInput
-    );
-
-  if (color === null) {
-    await interaction.reply({
-      content:
-        '❌ 色は6桁のHEX形式で入力してください。\n' +
-        '例：`5865F2`',
-      flags:
-        MessageFlags.Ephemeral
-    });
-
-    return;
-  }
-
   try {
+    const guildId =
+      interaction.guildId;
+
+    const parts =
+      interaction.customId.split(':');
+
+    const channelId =
+      parts[1];
+
+    if (!channelId) {
+      throw new Error(
+        '送信先チャンネル情報がありません。'
+      );
+    }
+
+    /*
+     * 二重作成防止
+     */
+
+    const existing =
+      getWelcomeMessage(
+        guildId
+      );
+
+    if (existing) {
+      await interaction.reply({
+        content:
+          '❌ 既にWelcomeメッセージが設定されています。',
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    /*
+     * 入力値
+     */
+
+    const title =
+      interaction.fields.getTextInputValue(
+        'welcome-title'
+      );
+
+    const description =
+      interaction.fields.getTextInputValue(
+        'welcome-description'
+      );
+
+    const colorInput =
+      interaction.fields.getTextInputValue(
+        'welcome-color'
+      );
+
+    /*
+     * 色
+     */
+
+    const color =
+      parseColor(
+        colorInput
+      );
+
+    if (color === null) {
+      await interaction.reply({
+        content:
+          '❌ 色は6桁のHEX形式で入力してください。\n' +
+          '例：`5865F2`',
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    /*
+     * チャンネル確認
+     */
+
     const channel =
       await interaction.guild.channels.fetch(
         channelId
@@ -591,7 +694,7 @@ async function handleCreateModal(
 
     if (!channel) {
       throw new Error(
-        '指定されたチャンネルが見つかりません。'
+        '指定されたチャンネルが存在しません。'
       );
     }
 
@@ -603,29 +706,30 @@ async function handleCreateModal(
       );
     }
 
-    const embed =
-      new EmbedBuilder()
-        .setTitle(
-          title
-        )
-        .setDescription(
-          description
-        )
-        .setColor(
-          color
-        );
+    /*
+     * Embedデータ
+     */
 
     const embedData = {
-      title,
-      description,
+      title:
+        String(title).slice(
+          0,
+          256
+        ),
+
+      description:
+        String(description).slice(
+          0,
+          4000
+        ),
+
       color
     };
 
     /*
-     * 設定保存
+     * SQLite保存
      *
-     * Welcomeは参加者ごとに送信するので
-     * 作成時にはDiscordへテスト送信しない。
+     * contentは必ず空文字を入れる
      */
 
     createWelcomeMessage({
@@ -642,6 +746,10 @@ async function handleCreateModal(
         interaction.user.id
     });
 
+    console.log(
+      `👋 Welcome設定作成: ${guildId}`
+    );
+
     await interaction.reply({
       content:
         `✅ Welcomeメッセージを設定しました。\n` +
@@ -656,83 +764,93 @@ async function handleCreateModal(
       error
     );
 
-    await interaction.reply({
-      content:
-        `❌ Welcomeメッセージの設定に失敗しました。\n\`${error.message}\``,
-      flags:
-        MessageFlags.Ephemeral
-    });
+    await safeReply(
+      interaction,
+      `Welcome設定の作成に失敗しました。\n\`${error.message}\``
+    );
   }
 }
 
 /*
  * =========================================================
- * Edit Modal
+ * Edit Modal Handler
  * =========================================================
  */
 
 async function handleEditModal(
   interaction
 ) {
-  const guildId =
-    interaction.guildId;
-
-  const welcome =
-    getWelcomeMessage(
-      guildId
-    );
-
-  if (!welcome) {
-    await interaction.reply({
-      content:
-        '❌ Welcomeメッセージが設定されていません。',
-      flags:
-        MessageFlags.Ephemeral
-    });
-
-    return;
-  }
-
-  const parts =
-    interaction.customId.split(':');
-
-  const channelId =
-    parts[1] ||
-    welcome.channel_id;
-
-  const title =
-    interaction.fields.getTextInputValue(
-      'welcome-title'
-    );
-
-  const description =
-    interaction.fields.getTextInputValue(
-      'welcome-description'
-    );
-
-  const colorInput =
-    interaction.fields.getTextInputValue(
-      'welcome-color'
-    );
-
-  const color =
-    parseColor(
-      colorInput
-    );
-
-  if (color === null) {
-    await interaction.reply({
-      content:
-        '❌ 色は6桁のHEX形式で入力してください。\n' +
-        '例：`5865F2`',
-      flags:
-        MessageFlags.Ephemeral
-    });
-
-    return;
-  }
-
   try {
+    const guildId =
+      interaction.guildId;
+
+    const existing =
+      getWelcomeMessage(
+        guildId
+      );
+
+    if (!existing) {
+      await interaction.reply({
+        content:
+          '❌ Welcomeメッセージが設定されていません。',
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    const parts =
+      interaction.customId.split(':');
+
+    const channelId =
+      parts[1] ||
+      existing.channel_id;
+
+    /*
+     * 入力値
+     */
+
+    const title =
+      interaction.fields.getTextInputValue(
+        'welcome-title'
+      );
+
+    const description =
+      interaction.fields.getTextInputValue(
+        'welcome-description'
+      );
+
+    const colorInput =
+      interaction.fields.getTextInputValue(
+        'welcome-color'
+      );
+
+    /*
+     * 色
+     */
+
+    const color =
+      parseColor(
+        colorInput
+      );
+
+    if (color === null) {
+      await interaction.reply({
+        content:
+          '❌ 色は6桁のHEX形式で入力してください。\n' +
+          '例：`5865F2`',
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    /*
+     * チャンネル
+     */
+
     const channel =
       await interaction.guild.channels.fetch(
         channelId
@@ -740,7 +858,7 @@ async function handleEditModal(
 
     if (!channel) {
       throw new Error(
-        '指定されたチャンネルが見つかりません。'
+        '指定されたチャンネルが存在しません。'
       );
     }
 
@@ -752,11 +870,29 @@ async function handleEditModal(
       );
     }
 
+    /*
+     * Embed
+     */
+
     const embedData = {
-      title,
-      description,
+      title:
+        String(title).slice(
+          0,
+          256
+        ),
+
+      description:
+        String(description).slice(
+          0,
+          4000
+        ),
+
       color
     };
+
+    /*
+     * SQLite更新
+     */
 
     updateWelcomeMessage({
       guildId,
@@ -772,6 +908,10 @@ async function handleEditModal(
         interaction.user.id
     });
 
+    console.log(
+      `👋 Welcome設定更新: ${guildId}`
+    );
+
     await interaction.reply({
       content:
         `✅ Welcomeメッセージを更新しました。\n` +
@@ -786,12 +926,10 @@ async function handleEditModal(
       error
     );
 
-    await interaction.reply({
-      content:
-        `❌ Welcomeメッセージの更新に失敗しました。\n\`${error.message}\``,
-      flags:
-        MessageFlags.Ephemeral
-    });
+    await safeReply(
+      interaction,
+      `Welcome設定の更新に失敗しました。\n\`${error.message}\``
+    );
   }
 }
 
@@ -801,31 +939,32 @@ async function handleEditModal(
  * =========================================================
  */
 
-async function deleteCommand(
+async function handleDelete(
   interaction
 ) {
-  const guildId =
-    interaction.guildId;
+  try {
+    const existing =
+      getWelcomeMessage(
+        interaction.guildId
+      );
 
-  const welcome =
-    getWelcomeMessage(
-      guildId
+    if (!existing) {
+      await interaction.reply({
+        content:
+          '❌ Welcomeメッセージは設定されていません。',
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    deleteWelcomeMessage(
+      interaction.guildId
     );
 
-  if (!welcome) {
-    await interaction.reply({
-      content:
-        '❌ Welcomeメッセージは設定されていません。',
-      flags:
-        MessageFlags.Ephemeral
-    });
-
-    return;
-  }
-
-  try {
-    deleteWelcomeMessage(
-      guildId
+    console.log(
+      `🗑️ Welcome設定削除: ${interaction.guildId}`
     );
 
     await interaction.reply({
@@ -841,12 +980,10 @@ async function deleteCommand(
       error
     );
 
-    await interaction.reply({
-      content:
-        '❌ Welcomeメッセージ設定の削除に失敗しました。',
-      flags:
-        MessageFlags.Ephemeral
-    });
+    await safeReply(
+      interaction,
+      `Welcome設定の削除に失敗しました。\n\`${error.message}\``
+    );
   }
 }
 
@@ -856,90 +993,149 @@ async function deleteCommand(
  * =========================================================
  */
 
-async function showCommand(
+async function handleShow(
   interaction
 ) {
-  const welcome =
-    getWelcomeMessage(
-      interaction.guildId
-    );
+  try {
+    const welcome =
+      getWelcomeMessage(
+        interaction.guildId
+      );
 
-  if (!welcome) {
+    if (!welcome) {
+      await interaction.reply({
+        content:
+          '👋 Welcomeメッセージは設定されていません。',
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    const storedEmbed =
+      getStoredEmbed(
+        welcome
+      );
+
+    const title =
+      storedEmbed?.title ??
+      welcome.embed_title ??
+      'なし';
+
+    const description =
+      storedEmbed?.description ??
+      welcome.embed_description ??
+      'なし';
+
+    const updatedAt =
+      Number(
+        welcome.updated_at ||
+        0
+      );
+
+    const embed =
+      new EmbedBuilder()
+        .setTitle(
+          '👋 Welcomeメッセージ設定'
+        )
+        .setColor(
+          0x5865F2
+        )
+        .addFields(
+          {
+            name: '送信先',
+            value:
+              `<#${welcome.channel_id}>`,
+            inline: true
+          },
+          {
+            name: 'タイトル',
+            value:
+              String(title).slice(
+                0,
+                1024
+              )
+          },
+          {
+            name: '本文',
+            value:
+              String(description).slice(
+                0,
+                1024
+              )
+          }
+        );
+
+    if (
+      updatedAt > 0
+    ) {
+      embed.addFields({
+        name: '最終更新',
+        value:
+          `<t:${updatedAt}:F>`
+      });
+    }
+
     await interaction.reply({
-      content:
-        '👋 Welcomeメッセージは設定されていません。',
+      embeds: [
+        embed
+      ],
       flags:
         MessageFlags.Ephemeral
     });
 
-    return;
+  } catch (error) {
+    console.error(
+      '❌ Welcome show error:',
+      error
+    );
+
+    await safeReply(
+      interaction,
+      `Welcome設定の取得に失敗しました。\n\`${error.message}\``
+    );
   }
+}
 
-  const storedEmbed =
-    getStoredEmbed(
-      welcome
+/*
+ * =========================================================
+ * Safe Reply
+ * =========================================================
+ */
+
+async function safeReply(
+  interaction,
+  content
+) {
+  try {
+    if (
+      interaction.replied ||
+      interaction.deferred
+    ) {
+      await interaction.followUp({
+        content:
+          `❌ ${content}`,
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    await interaction.reply({
+      content:
+        `❌ ${content}`,
+      flags:
+        MessageFlags.Ephemeral
+    });
+
+  } catch (error) {
+    console.error(
+      '❌ Welcome safeReply error:',
+      error
     );
-
-  const title =
-    storedEmbed?.title ??
-    welcome.embed_title ??
-    'なし';
-
-  const description =
-    storedEmbed?.description ??
-    welcome.embed_description ??
-    'なし';
-
-  const updatedAt =
-    Number(
-      welcome.updated_at
-    );
-
-  const embed =
-    new EmbedBuilder()
-      .setTitle(
-        '👋 Welcomeメッセージ設定'
-      )
-      .setColor(
-        0x5865F2
-      )
-      .addFields(
-        {
-          name: '送信先',
-          value:
-            `<#${welcome.channel_id}>`,
-          inline: true
-        },
-        {
-          name: 'タイトル',
-          value:
-            String(title).slice(
-              0,
-              1024
-            )
-        },
-        {
-          name: '本文',
-          value:
-            String(description).slice(
-              0,
-              1024
-            )
-        },
-        {
-          name: '最終更新',
-          value:
-            `<t:${updatedAt}:F>`
-        }
-      );
-
-  await interaction.reply({
-    embeds: [
-      embed
-    ],
-    flags:
-      MessageFlags.Ephemeral
-  });
+  }
 }
 
 module.exports = command;
