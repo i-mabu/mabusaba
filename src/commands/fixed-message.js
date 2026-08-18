@@ -673,23 +673,16 @@ async function handleCreateModal(
  * =========================================================
  */
 
-async function handleEditModal(
-  interaction
-) {
-  const guildId =
-    interaction.guildId;
+async function handleEditModal(interaction) {
+  const guildId = interaction.guildId;
 
-  const fixed =
-    getFixedMessage(
-      guildId
-    );
+  const fixed = getFixedMessage(guildId);
 
   if (!fixed) {
     await interaction.reply({
       content:
         '❌ 固定メッセージが登録されていません。',
-      flags:
-        MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral
     });
 
     return;
@@ -710,18 +703,14 @@ async function handleEditModal(
       'fixed-color'
     );
 
-  const color =
-    parseColor(
-      colorInput
-    );
+  const color = parseColor(colorInput);
 
   if (color === null) {
     await interaction.reply({
       content:
         '❌ 色は6桁のHEX形式で入力してください。\n' +
         '例：`5865F2`',
-      flags:
-        MessageFlags.Ephemeral
+      flags: MessageFlags.Ephemeral
     });
 
     return;
@@ -729,15 +718,9 @@ async function handleEditModal(
 
   const embed =
     new EmbedBuilder()
-      .setTitle(
-        title
-      )
-      .setDescription(
-        description
-      )
-      .setColor(
-        color
-      );
+      .setTitle(title)
+      .setDescription(description)
+      .setColor(color);
 
   const embedData = {
     title,
@@ -747,7 +730,9 @@ async function handleEditModal(
 
   try {
     /*
-     * 固定メッセージのチャンネルを取得
+     * ==================================================
+     * 1. 元のチャンネルを取得
+     * ==================================================
      */
 
     const channel =
@@ -757,44 +742,72 @@ async function handleEditModal(
 
     if (!channel) {
       throw new Error(
-        '固定メッセージのチャンネルが見つかりません。'
+        `チャンネルが見つかりません: ${fixed.channel_id}`
       );
     }
 
     /*
-     * ===================================================
-     * 旧メッセージ削除
-     * ===================================================
+     * TextBased Channelか確認
      */
 
+    if (
+      !channel.isTextBased()
+    ) {
+      throw new Error(
+        '固定メッセージのチャンネルがテキストチャンネルではありません。'
+      );
+    }
+
+    /*
+     * ==================================================
+     * 2. 古い固定メッセージを削除
+     * ==================================================
+     */
+
+    let oldMessage = null;
+
     try {
-      const oldMessage =
+      oldMessage =
         await channel.messages.fetch(
           fixed.message_id
         );
-
-      await oldMessage.delete();
-
     } catch (error) {
-      /*
-       * 既に削除済みなら続行
-       */
+      console.log(
+        '⚠️ 古い固定メッセージを取得できませんでした。'
+      );
 
       console.log(
-        '⚠️ 旧固定メッセージは存在しません。'
+        error.message
       );
     }
 
+    if (oldMessage) {
+      try {
+        await oldMessage.delete();
+
+        console.log(
+          `🗑️ 旧固定メッセージを削除: ${fixed.message_id}`
+        );
+
+      } catch (error) {
+        console.error(
+          '❌ 旧固定メッセージ削除失敗:',
+          error
+        );
+
+        throw new Error(
+          '旧固定メッセージを削除できませんでした。Botに「メッセージの管理」権限があるか確認してください。'
+        );
+      }
+    }
+
     /*
-     * ===================================================
-     * 新しいメッセージを送信
+     * ==================================================
+     * 3. 新しい固定メッセージを送信
      *
-     * Discordでは既存メッセージを
-     * 下へ移動するAPIがないため、
-     * 削除→再送信する。
-     *
-     * これによって必ずチャンネル下部になる。
-     * ===================================================
+     * channel.send() は現在のチャンネルの
+     * 最新位置に新規メッセージを作成する。
+     * ==================================================
      */
 
     const newMessage =
@@ -804,10 +817,14 @@ async function handleEditModal(
         ]
       });
 
+    console.log(
+      `📌 新しい固定メッセージを送信: ${newMessage.id}`
+    );
+
     /*
-     * ===================================================
-     * SQLite更新
-     * ===================================================
+     * ==================================================
+     * 4. SQLiteを更新
+     * ==================================================
      */
 
     updateFixedMessage({
@@ -819,8 +836,10 @@ async function handleEditModal(
       messageId:
         newMessage.id,
 
-      content:
-        '',
+      /*
+       * content NOT NULL対策
+       */
+      content: '',
 
       embed:
         embedData,
@@ -829,26 +848,73 @@ async function handleEditModal(
         interaction.user.id
     });
 
+    /*
+     * ==================================================
+     * 5. 確認
+     * ==================================================
+     */
+
+    const saved =
+      getFixedMessage(
+        guildId
+      );
+
+    console.log(
+      '📌 固定メッセージDB更新:',
+      {
+        guildId,
+        channelId: saved.channel_id,
+        messageId: saved.message_id
+      }
+    );
+
+    /*
+     * ==================================================
+     * 6. 管理者へ通知
+     * ==================================================
+     */
+
     await interaction.reply({
       content:
         '✅ 固定メッセージを更新しました。\n' +
-        '📌 チャンネルの下部へ再配置しました。',
+        '📌 古いメッセージを削除し、新しいメッセージをチャンネル下部へ再送信しました。',
       flags:
         MessageFlags.Ephemeral
     });
 
   } catch (error) {
+
     console.error(
-      '❌ Fixed message edit error:',
+      '❌ Fixed message edit error:'
+    );
+
+    console.error(
       error
     );
 
-    await interaction.reply({
-      content:
-        '❌ 固定メッセージの更新に失敗しました。',
-      flags:
-        MessageFlags.Ephemeral
-    });
+    /*
+     * まだinteractionに返答していない場合
+     */
+
+    if (
+      interaction.replied ||
+      interaction.deferred
+    ) {
+      await interaction.followUp({
+        content:
+          `❌ 固定メッセージの更新に失敗しました。\n\`${error.message}\``,
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+    } else {
+      await interaction.reply({
+        content:
+          `❌ 固定メッセージの更新に失敗しました。\n\`${error.message}\``,
+        flags:
+          MessageFlags.Ephemeral
+      });
+    }
   }
 }
 
