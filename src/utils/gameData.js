@@ -1,100 +1,133 @@
+const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
 const dataDir = path.join(__dirname, '../data');
-const dataFile = path.join(dataDir, 'games.json');
 
-function ensureDataFile() {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, {
-      recursive: true,
-    });
-  }
-
-  if (!fs.existsSync(dataFile)) {
-    fs.writeFileSync(
-      dataFile,
-      JSON.stringify({}, null, 2),
-      'utf8'
-    );
-  }
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
 }
 
-function loadData() {
-  ensureDataFile();
+const db = new Database(
+  path.join(dataDir, 'games.db')
+);
 
-  try {
-    return JSON.parse(
-      fs.readFileSync(dataFile, 'utf8')
-    );
-  } catch (error) {
-    console.error(
-      'ゲームデータ読み込みエラー:',
-      error
-    );
+// SQLiteの安全性・性能設定
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
 
-    return {};
-  }
-}
-
-function saveData(data) {
-  ensureDataFile();
-
-  fs.writeFileSync(
-    dataFile,
-    JSON.stringify(data, null, 2),
-    'utf8'
+// テーブル作成
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    user_id TEXT PRIMARY KEY,
+    username TEXT NOT NULL DEFAULT '',
+    points INTEGER NOT NULL DEFAULT 100,
+    games INTEGER NOT NULL DEFAULT 0,
+    wins INTEGER NOT NULL DEFAULT 0,
+    losses INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
-}
+`);
+
+const getUserStmt = db.prepare(`
+  SELECT
+    user_id,
+    username,
+    points,
+    games,
+    wins,
+    losses,
+    created_at,
+    updated_at
+  FROM users
+  WHERE user_id = ?
+`);
+
+const createUserStmt = db.prepare(`
+  INSERT INTO users (
+    user_id,
+    username,
+    points
+  )
+  VALUES (?, ?, 100)
+`);
+
+const updateUsernameStmt = db.prepare(`
+  UPDATE users
+  SET
+    username = ?,
+    updated_at = unixepoch()
+  WHERE user_id = ?
+`);
+
+const updatePointsStmt = db.prepare(`
+  UPDATE users
+  SET
+    points = points + ?,
+    updated_at = unixepoch()
+  WHERE user_id = ?
+`);
+
+const recordGameStmt = db.prepare(`
+  UPDATE users
+  SET
+    points = points + ?,
+    games = games + 1,
+    wins = wins + ?,
+    losses = losses + ?,
+    updated_at = unixepoch()
+  WHERE user_id = ?
+`);
+
+const rankingStmt = db.prepare(`
+  SELECT
+    user_id,
+    username,
+    points,
+    games,
+    wins,
+    losses
+  FROM users
+  ORDER BY points DESC, wins DESC
+  LIMIT ?
+`);
 
 function ensureUser(userId, username = '') {
-  const data = loadData();
+  let user = getUserStmt.get(userId);
 
-  if (!data[userId]) {
-    data[userId] = {
-      username,
-      points: 100,
-      games: 0,
-      wins: 0,
-      losses: 0,
-    };
+  if (!user) {
+    createUserStmt.run(userId, username);
+    user = getUserStmt.get(userId);
+  } else if (
+    username &&
+    user.username !== username
+  ) {
+    updateUsernameStmt.run(username, userId);
+    user = getUserStmt.get(userId);
   }
 
-  if (username) {
-    data[userId].username = username;
-  }
-
-  saveData(data);
-
-  return data[userId];
+  return user;
 }
 
 function getUser(userId, username = '') {
   return ensureUser(userId, username);
 }
 
-function addPoints(userId, amount, username = '') {
-  const data = loadData();
+function addPoints(
+  userId,
+  amount,
+  username = ''
+) {
+  ensureUser(userId, username);
 
-  if (!data[userId]) {
-    data[userId] = {
-      username,
-      points: 100,
-      games: 0,
-      wins: 0,
-      losses: 0,
-    };
-  }
+  updatePointsStmt.run(
+    amount,
+    userId
+  );
 
-  data[userId].points += amount;
-
-  if (username) {
-    data[userId].username = username;
-  }
-
-  saveData(data);
-
-  return data[userId];
+  return getUser(userId, username);
 }
 
 function recordGame(
@@ -103,55 +136,29 @@ function recordGame(
   points,
   username = ''
 ) {
-  const data = loadData();
+  ensureUser(userId, username);
 
-  if (!data[userId]) {
-    data[userId] = {
-      username,
-      points: 100,
-      games: 0,
-      wins: 0,
-      losses: 0,
-    };
-  }
+  const win =
+    result === 'win' ? 1 : 0;
 
-  data[userId].games += 1;
-  data[userId].points += points;
+  const lose =
+    result === 'lose' ? 1 : 0;
 
-  if (result === 'win') {
-    data[userId].wins += 1;
-  }
+  recordGameStmt.run(
+    points,
+    win,
+    lose,
+    userId
+  );
 
-  if (result === 'lose') {
-    data[userId].losses += 1;
-  }
-
-  if (username) {
-    data[userId].username = username;
-  }
-
-  saveData(data);
-
-  return data[userId];
+  return getUser(userId, username);
 }
 
 function getRanking(limit = 10) {
-  const data = loadData();
-
-  return Object.entries(data)
-    .sort(([, a], [, b]) =>
-      b.points - a.points
-    )
-    .slice(0, limit)
-    .map(([id, user]) => ({
-      id,
-      ...user,
-    }));
+  return rankingStmt.all(limit);
 }
 
 module.exports = {
-  loadData,
-  saveData,
   getUser,
   addPoints,
   recordGame,
