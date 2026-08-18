@@ -5,19 +5,25 @@ const path = require('path');
 const dataDir = path.join(__dirname, '../data');
 
 if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(dataDir, {
+    recursive: true
+  });
 }
 
 const db = new Database(
   path.join(dataDir, 'games.db')
 );
 
-// SQLiteの安全性・性能設定
+/*
+ * SQLite設定
+ */
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('busy_timeout = 5000');
 
-// テーブル作成
+/*
+ * テーブル作成
+ */
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     user_id TEXT PRIMARY KEY,
@@ -29,22 +35,58 @@ db.exec(`
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
   );
+
+  CREATE TABLE IF NOT EXISTS game_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    user_id TEXT NOT NULL,
+
+    username TEXT NOT NULL DEFAULT '',
+
+    game TEXT NOT NULL,
+
+    result TEXT NOT NULL,
+
+    points_before INTEGER NOT NULL,
+
+    points_change INTEGER NOT NULL,
+
+    points_after INTEGER NOT NULL,
+
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+
+    metadata TEXT,
+
+    FOREIGN KEY (user_id)
+      REFERENCES users(user_id)
+      ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS
+    idx_game_logs_user_id
+    ON game_logs(user_id);
+
+  CREATE INDEX IF NOT EXISTS
+    idx_game_logs_game
+    ON game_logs(game);
+
+  CREATE INDEX IF NOT EXISTS
+    idx_game_logs_created_at
+    ON game_logs(created_at);
 `);
 
+/*
+ * ユーザー取得
+ */
 const getUserStmt = db.prepare(`
-  SELECT
-    user_id,
-    username,
-    points,
-    games,
-    wins,
-    losses,
-    created_at,
-    updated_at
+  SELECT *
   FROM users
   WHERE user_id = ?
 `);
 
+/*
+ * ユーザー作成
+ */
 const createUserStmt = db.prepare(`
   INSERT INTO users (
     user_id,
@@ -54,6 +96,9 @@ const createUserStmt = db.prepare(`
   VALUES (?, ?, 100)
 `);
 
+/*
+ * ユーザー名更新
+ */
 const updateUsernameStmt = db.prepare(`
   UPDATE users
   SET
@@ -62,105 +107,414 @@ const updateUsernameStmt = db.prepare(`
   WHERE user_id = ?
 `);
 
-const updatePointsStmt = db.prepare(`
-  UPDATE users
-  SET
-    points = points + ?,
-    updated_at = unixepoch()
-  WHERE user_id = ?
-`);
-
-const recordGameStmt = db.prepare(`
-  UPDATE users
-  SET
-    points = points + ?,
-    games = games + 1,
-    wins = wins + ?,
-    losses = losses + ?,
-    updated_at = unixepoch()
-  WHERE user_id = ?
-`);
-
-const rankingStmt = db.prepare(`
-  SELECT
-    user_id,
-    username,
-    points,
-    games,
-    wins,
-    losses
-  FROM users
-  ORDER BY points DESC, wins DESC
-  LIMIT ?
-`);
-
-function ensureUser(userId, username = '') {
-  let user = getUserStmt.get(userId);
+/*
+ * ユーザー存在確認
+ */
+function ensureUser(
+  userId,
+  username = ''
+) {
+  let user =
+    getUserStmt.get(userId);
 
   if (!user) {
-    createUserStmt.run(userId, username);
-    user = getUserStmt.get(userId);
-  } else if (
+    createUserStmt.run(
+      userId,
+      username
+    );
+
+    user =
+      getUserStmt.get(userId);
+  }
+
+  if (
     username &&
     user.username !== username
   ) {
-    updateUsernameStmt.run(username, userId);
-    user = getUserStmt.get(userId);
+    updateUsernameStmt.run(
+      username,
+      userId
+    );
+
+    user =
+      getUserStmt.get(userId);
   }
 
   return user;
 }
 
-function getUser(userId, username = '') {
-  return ensureUser(userId, username);
-}
-
-function addPoints(
+/*
+ * ユーザー取得
+ */
+function getUser(
   userId,
-  amount,
   username = ''
 ) {
-  ensureUser(userId, username);
-
-  updatePointsStmt.run(
-    amount,
-    userId
+  return ensureUser(
+    userId,
+    username
   );
-
-  return getUser(userId, username);
 }
 
-function recordGame(
+/*
+ * ゲーム結果記録
+ *
+ * ポイント変更とログ保存を
+ * 1つのTransactionで処理する。
+ */
+const recordGameTransaction =
+  db.transaction(
+    ({
+      userId,
+      username,
+      game,
+      result,
+      points,
+      metadata
+    }) => {
+      const user =
+        ensureUser(
+          userId,
+          username
+        );
+
+      const before =
+        user.points;
+
+      const after =
+        before + points;
+
+      let wins = 0;
+      let losses = 0;
+
+      if (result === 'win') {
+        wins = 1;
+      }
+
+      if (result === 'lose') {
+        losses = 1;
+      }
+
+      db.prepare(`
+        UPDATE users
+        SET
+          points = ?,
+          games = games + 1,
+          wins = wins + ?,
+          losses = losses + ?,
+          updated_at = unixepoch()
+        WHERE user_id = ?
+      `).run(
+        after,
+        wins,
+        losses,
+        userId
+      );
+
+      db.prepare(`
+        INSERT INTO game_logs (
+          user_id,
+          username,
+          game,
+          result,
+          points_before,
+          points_change,
+          points_after,
+          metadata
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        userId,
+        username,
+        game,
+        result,
+        before,
+        points,
+        after,
+        metadata
+          ? JSON.stringify(metadata)
+          : null
+      );
+
+      return getUser(
+        userId,
+        username
+      );
+    }
+  );
+
+/*
+ * ゲーム記録
+ */
+function recordGame({
   userId,
+  username = '',
+  game,
   result,
-  points,
-  username = ''
-) {
-  ensureUser(userId, username);
-
-  const win =
-    result === 'win' ? 1 : 0;
-
-  const lose =
-    result === 'lose' ? 1 : 0;
-
-  recordGameStmt.run(
+  points = 0,
+  metadata = null
+}) {
+  return recordGameTransaction({
+    userId,
+    username,
+    game,
+    result,
     points,
-    win,
-    lose,
-    userId
-  );
-
-  return getUser(userId, username);
+    metadata
+  });
 }
 
-function getRanking(limit = 10) {
-  return rankingStmt.all(limit);
+/*
+ * 管理者などによるポイント変更
+ */
+const adjustPointsTransaction =
+  db.transaction(
+    ({
+      userId,
+      username,
+      amount,
+      reason,
+      executorId,
+      executorName
+    }) => {
+      const user =
+        ensureUser(
+          userId,
+          username
+        );
+
+      const before =
+        user.points;
+
+      const after =
+        before + amount;
+
+      db.prepare(`
+        UPDATE users
+        SET
+          points = ?,
+          updated_at = unixepoch()
+        WHERE user_id = ?
+      `).run(
+        after,
+        userId
+      );
+
+      db.prepare(`
+        INSERT INTO game_logs (
+          user_id,
+          username,
+          game,
+          result,
+          points_before,
+          points_change,
+          points_after,
+          metadata
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        userId,
+        username,
+        'system',
+        'admin_adjustment',
+        before,
+        amount,
+        after,
+        JSON.stringify({
+          reason,
+          executorId,
+          executorName
+        })
+      );
+
+      return getUser(
+        userId,
+        username
+      );
+    }
+  );
+
+/*
+ * ポイント変更
+ */
+function adjustPoints({
+  userId,
+  username = '',
+  amount,
+  reason = '管理者による変更',
+  executorId,
+  executorName
+}) {
+  return adjustPointsTransaction({
+    userId,
+    username,
+    amount,
+    reason,
+    executorId,
+    executorName
+  });
+}
+
+/*
+ * ランキング
+ */
+function getRanking(
+  limit = 10
+) {
+  return db.prepare(`
+    SELECT
+      user_id,
+      username,
+      points,
+      games,
+      wins,
+      losses
+    FROM users
+    ORDER BY
+      points DESC,
+      wins DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+/*
+ * ゲームログ
+ */
+function getGameLogs({
+  userId = null,
+  game = null,
+  limit = 50
+} = {}) {
+  let sql = `
+    SELECT *
+    FROM game_logs
+    WHERE 1 = 1
+  `;
+
+  const params = [];
+
+  if (userId) {
+    sql += `
+      AND user_id = ?
+    `;
+
+    params.push(userId);
+  }
+
+  if (game) {
+    sql += `
+      AND game = ?
+    `;
+
+    params.push(game);
+  }
+
+  sql += `
+    ORDER BY created_at DESC
+    LIMIT ?
+  `;
+
+  params.push(limit);
+
+  return db
+    .prepare(sql)
+    .all(...params);
+}
+
+/*
+ * ゲーム別統計
+ */
+function getGameStats() {
+  return db.prepare(`
+    SELECT
+      game,
+
+      COUNT(*) AS games,
+
+      SUM(
+        CASE
+          WHEN result = 'win'
+          THEN 1
+          ELSE 0
+        END
+      ) AS wins,
+
+      SUM(
+        CASE
+          WHEN result = 'lose'
+          THEN 1
+          ELSE 0
+        END
+      ) AS losses,
+
+      COALESCE(
+        SUM(points_change),
+        0
+      ) AS points
+
+    FROM game_logs
+
+    WHERE game != 'system'
+
+    GROUP BY game
+
+    ORDER BY games DESC
+  `).all();
+}
+
+/*
+ * 全体統計
+ */
+function getGlobalStats() {
+  return db.prepare(`
+    SELECT
+
+      COUNT(*) AS games,
+
+      COUNT(
+        DISTINCT user_id
+      ) AS users,
+
+      COALESCE(
+        SUM(points_change),
+        0
+      ) AS points
+
+    FROM game_logs
+
+    WHERE game != 'system'
+  `).get();
+}
+
+/*
+ * 最近のログ
+ */
+function getRecentLogs(
+  limit = 20
+) {
+  return db.prepare(`
+    SELECT *
+    FROM game_logs
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+/*
+ * DB終了
+ */
+function closeDatabase() {
+  db.close();
 }
 
 module.exports = {
   getUser,
-  addPoints,
   recordGame,
+  adjustPoints,
   getRanking,
+  getGameLogs,
+  getGameStats,
+  getGlobalStats,
+  getRecentLogs,
+  closeDatabase
 };
