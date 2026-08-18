@@ -39,646 +39,778 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const user =
-      getUser(
-        interaction.user.id,
-        interaction.user.username
-      );
-
-    const menuEmbed =
-      createMenuEmbed(
-        user.points
-      );
-
-    const rows =
-      createMenuRows();
+    const user = getUser(
+      interaction.user.id,
+      interaction.user.username
+    );
 
     await interaction.reply({
-      embeds: [menuEmbed],
-      components: rows
+      embeds: [
+        createMenuEmbed(user.points)
+      ],
+      components: createMenuRows()
     });
 
     const message =
       await interaction.fetchReply();
 
+    /*
+     * この /game を実行したユーザー専用
+     * ボタンCollector
+     */
     const collector =
       message.createMessageComponentCollector({
-        time: 120000
+        time: 120000,
+
+        filter: button => {
+          return (
+            button.user.id ===
+            interaction.user.id
+          );
+        }
       });
 
     collector.on(
       'collect',
       async button => {
-        if (
-          button.user.id !==
-          interaction.user.id
-        ) {
-          return button.reply({
-            content:
-              '❌ このゲームを開始したユーザー以外は操作できません。',
-            ephemeral: true
-          });
-        }
-
-        /*
-         * サイコロ
-         */
-        if (
-          button.customId ===
-          'game_dice'
-        ) {
-          const game =
-            playDice();
-
-          let points = 0;
-          let text = '';
-
+        try {
+          /*
+           * 他人が押した場合
+           */
           if (
-            game.result === 'win'
+            button.user.id !==
+            interaction.user.id
           ) {
-            points = 10;
-            text =
-              '🎉 あなたの勝ち！';
-          } else if (
-            game.result === 'lose'
-          ) {
-            points = -5;
-            text =
-              '😢 あなたの負け…';
-          } else {
-            text =
-              '🤝 引き分け！';
-          }
-
-          const data =
-            recordGame({
-              userId:
-                interaction.user.id,
-
-              username:
-                interaction.user.username,
-
-              game: 'dice',
-
-              result:
-                game.result,
-
-              points,
-
-              metadata: {
-                player:
-                  game.player,
-
-                bot:
-                  game.bot
-              }
+            await button.reply({
+              content:
+                '❌ このゲームを開始したユーザー以外は操作できません。',
+              ephemeral: true
             });
 
-          const embed =
-            new EmbedBuilder()
-              .setTitle(
-                '🎲 サイコロ'
-              )
-              .setDescription(text)
-              .addFields(
-                {
-                  name: 'あなた',
-                  value:
-                    `🎲 ${game.player}`,
-                  inline: true
-                },
-                {
-                  name: 'Bot',
-                  value:
-                    `🎲 ${game.bot}`,
-                  inline: true
-                },
-                {
-                  name: 'ポイント',
-                  value:
-                    formatPoints(points),
-                  inline: true
-                },
-                {
-                  name:
-                    '所持ポイント',
-                  value:
-                    `${data.points}pt`
-                }
-              )
-              .setColor(
-                getResultColor(
-                  game.result
-                )
-              );
-
-          return button.update({
-            embeds: [embed],
-            components: [
-              createBackButton()
-            ]
-          });
-        }
-
-        /*
-         * コイントス
-         */
-        if (
-          button.customId ===
-          'game_coin'
-        ) {
-          const result =
-            playCoin();
-
-          const embed =
-            new EmbedBuilder()
-              .setTitle(
-                '🪙 コイントス'
-              )
-              .setDescription(
-                `コインの結果は……\n\n# ${result}！`
-              )
-              .setColor(
-                0xf1c40f
-              );
+            return;
+          }
 
           /*
-           * コイントスは
-           * ポイント変動なし
+           * ==========================
+           * ゲーム選択に戻る
+           * ==========================
            */
-          recordGame({
-            userId:
-              interaction.user.id,
-
-            username:
-              interaction.user.username,
-
-            game: 'coin',
-
-            result: 'draw',
-
-            points: 0,
-
-            metadata: {
-              result
-            }
-          });
-
-          return button.update({
-            embeds: [embed],
-            components: [
-              createBackButton()
-            ]
-          });
-        }
-
-        /*
-         * じゃんけん
-         */
-        if (
-          button.customId ===
-          'game_rps'
-        ) {
-          const row =
-            new ActionRowBuilder()
-              .addComponents(
-                new ButtonBuilder()
-                  .setCustomId(
-                    'rps_rock'
-                  )
-                  .setLabel(
-                    'グー'
-                  )
-                  .setEmoji('✊')
-                  .setStyle(
-                    ButtonStyle.Primary
-                  ),
-
-                new ButtonBuilder()
-                  .setCustomId(
-                    'rps_paper'
-                  )
-                  .setLabel(
-                    'パー'
-                  )
-                  .setEmoji('✋')
-                  .setStyle(
-                    ButtonStyle.Primary
-                  ),
-
-                new ButtonBuilder()
-                  .setCustomId(
-                    'rps_scissors'
-                  )
-                  .setLabel(
-                    'チョキ'
-                  )
-                  .setEmoji('✌️')
-                  .setStyle(
-                    ButtonStyle.Primary
-                  )
-              );
-
-          return button.update({
-            embeds: [
-              new EmbedBuilder()
-                .setTitle(
-                  '✊ じゃんけん'
-                )
-                .setDescription(
-                  '手を選んでください！'
-                )
-                .setColor(
-                  0x5865f2
-                )
-            ],
-            components: [row]
-          });
-        }
-
-        /*
-         * じゃんけん結果
-         */
-        if (
-          button.customId.startsWith(
-            'rps_'
-          )
-        ) {
-          const choice =
-            button.customId.replace(
-              'rps_',
-              ''
-            );
-
-          const game =
-            playRps(choice);
-
-          let points = 0;
-          let text = '';
-
           if (
-            game.result === 'win'
-          ) {
-            points = 15;
-            text =
-              '🎉 勝ち！';
-          } else if (
-            game.result === 'lose'
-          ) {
-            points = -5;
-            text =
-              '😢 負け…';
-          } else {
-            text =
-              '🤝 引き分け！';
-          }
-
-          const data =
-            recordGame({
-              userId:
-                interaction.user.id,
-
-              username:
-                interaction.user.username,
-
-              game: 'rps',
-
-              result:
-                game.result,
-
-              points,
-
-              metadata: {
-                player:
-                  game.player,
-
-                bot:
-                  game.bot
-              }
-            });
-
-          const embed =
-            new EmbedBuilder()
-              .setTitle(
-                '✊ じゃんけん結果'
-              )
-              .setDescription(text)
-              .addFields(
-                {
-                  name: 'あなた',
-                  value:
-                    game.playerName,
-                  inline: true
-                },
-                {
-                  name: 'Bot',
-                  value:
-                    game.botName,
-                  inline: true
-                },
-                {
-                  name: 'ポイント',
-                  value:
-                    formatPoints(points),
-                  inline: true
-                },
-                {
-                  name:
-                    '所持ポイント',
-                  value:
-                    `${data.points}pt`
-                }
-              )
-              .setColor(
-                getResultColor(
-                  game.result
-                )
-              );
-
-          return button.update({
-            embeds: [embed],
-            components: [
-              createBackButton()
-            ]
-          });
-        }
-
-        /*
-         * HIGH / LOW
-         */
-        if (
-          button.customId ===
-            'game_high' ||
-          button.customId ===
-            'game_low'
-        ) {
-          const choice =
             button.customId ===
-            'game_high'
-              ? 'high'
-              : 'low';
-
-          const game =
-            playHighLow(choice);
-
-          let points = 0;
-          let text = '';
-
-          if (
-            game.result === 'win'
+            'game_back'
           ) {
-            points = 20;
-            text =
-              '🎉 予想的中！';
-          } else if (
-            game.result === 'lose'
-          ) {
-            points = -5;
-            text =
-              '😢 予想失敗…';
-          } else {
-            text =
-              '🤝 同じ数字でした！';
-          }
-
-          const data =
-            recordGame({
-              userId:
+            const current =
+              getUser(
                 interaction.user.id,
-
-              username:
-                interaction.user.username,
-
-              game: 'highlow',
-
-              result:
-                game.result,
-
-              points,
-
-              metadata: {
-                choice,
-                first:
-                  game.first,
-                second:
-                  game.second
-              }
-            });
-
-          const embed =
-            new EmbedBuilder()
-              .setTitle(
-                '🎯 HIGH & LOW'
-              )
-              .setDescription(text)
-              .addFields(
-                {
-                  name:
-                    '最初のカード',
-                  value:
-                    `🃏 ${game.first}`,
-                  inline: true
-                },
-                {
-                  name:
-                    'あなたの予想',
-                  value:
-                    choice === 'high'
-                      ? '⬆️ HIGH'
-                      : '⬇️ LOW',
-                  inline: true
-                },
-                {
-                  name:
-                    '次のカード',
-                  value:
-                    `🃏 ${game.second}`,
-                  inline: true
-                },
-                {
-                  name:
-                    'ポイント',
-                  value:
-                    formatPoints(points),
-                  inline: true
-                },
-                {
-                  name:
-                    '所持ポイント',
-                  value:
-                    `${data.points}pt`,
-                  inline: true
-                }
-              )
-              .setColor(
-                getResultColor(
-                  game.result
-                )
+                interaction.user.username
               );
 
-          return button.update({
-            embeds: [embed],
-            components: [
-              createBackButton()
-            ]
-          });
-        }
+            await button.update({
+              embeds: [
+                createMenuEmbed(
+                  current.points
+                )
+              ],
+              components:
+                createMenuRows()
+            });
 
-        /*
-         * スロット
-         */
-        if (
-          button.customId ===
-          'game_slots'
-        ) {
-          const game =
-            playSlots();
-
-          let text;
-          let points;
-
-          if (
-            game.outcome ===
-            'jackpot'
-          ) {
-            text =
-              '🎉🎉 JACKPOT!! 🎉🎉';
-
-            points = 50;
-          } else if (
-            game.outcome ===
-            'win'
-          ) {
-            text =
-              '🎉 当たり！';
-
-            points = 15;
-          } else {
-            text =
-              '😢 ハズレ…';
-
-            points = -5;
+            return;
           }
 
-          const result =
-            game.outcome ===
-            'lose'
-              ? 'lose'
-              : 'win';
+          /*
+           * ==========================
+           * サイコロ
+           * ==========================
+           */
+          if (
+            button.customId ===
+            'game_dice'
+          ) {
+            const game =
+              playDice();
 
-          const data =
-            recordGame({
-              userId:
-                interaction.user.id,
+            let points = 0;
+            let text = '';
 
-              username:
-                interaction.user.username,
+            if (
+              game.result ===
+              'win'
+            ) {
+              points = 10;
+              text =
+                '🎉 あなたの勝ち！';
+            } else if (
+              game.result ===
+              'lose'
+            ) {
+              points = -5;
+              text =
+                '😢 あなたの負け…';
+            } else {
+              text =
+                '🤝 引き分け！';
+            }
 
-              game: 'slots',
+            const data =
+              recordGame({
+                userId:
+                  interaction.user.id,
 
-              result,
+                username:
+                  interaction.user.username,
 
-              points,
+                game:
+                  'dice',
 
-              metadata: {
-                slots:
+                result:
                   game.result,
 
-                outcome:
-                  game.outcome
+                points,
+
+                metadata: {
+                  player:
+                    game.player,
+
+                  bot:
+                    game.bot
+                }
+              });
+
+            const embed =
+              new EmbedBuilder()
+                .setTitle(
+                  '🎲 サイコロ'
+                )
+                .setDescription(
+                  text
+                )
+                .addFields(
+                  {
+                    name:
+                      'あなた',
+                    value:
+                      `🎲 ${game.player}`,
+                    inline: true
+                  },
+                  {
+                    name:
+                      'Bot',
+                    value:
+                      `🎲 ${game.bot}`,
+                    inline: true
+                  },
+                  {
+                    name:
+                      'ポイント',
+                    value:
+                      formatPoints(
+                        points
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      '所持ポイント',
+                    value:
+                      `${data.points}pt`
+                  }
+                )
+                .setColor(
+                  getResultColor(
+                    game.result
+                  )
+                );
+
+            await button.update({
+              embeds: [embed],
+              components: [
+                createBackButton()
+              ]
+            });
+
+            return;
+          }
+
+          /*
+           * ==========================
+           * コイントス
+           * ==========================
+           */
+          if (
+            button.customId ===
+            'game_coin'
+          ) {
+            const result =
+              playCoin();
+
+            recordGame({
+              userId:
+                interaction.user.id,
+
+              username:
+                interaction.user.username,
+
+              game:
+                'coin',
+
+              result:
+                'draw',
+
+              points: 0,
+
+              metadata: {
+                result
               }
             });
 
-          const embed =
-            new EmbedBuilder()
-              .setTitle(
-                '🎰 スロット'
-              )
-              .setDescription(
-                `# ${game.result.join(' | ')}\n\n${text}`
-              )
-              .addFields(
-                {
-                  name:
-                    'ポイント',
-                  value:
-                    formatPoints(points),
-                  inline: true
-                },
-                {
+            const current =
+              getUser(
+                interaction.user.id,
+                interaction.user.username
+              );
+
+            const embed =
+              new EmbedBuilder()
+                .setTitle(
+                  '🪙 コイントス'
+                )
+                .setDescription(
+                  `コインの結果は……\n\n# ${result}！`
+                )
+                .addFields({
                   name:
                     '所持ポイント',
                   value:
-                    `${data.points}pt`,
-                  inline: true
-                }
-              )
-              .setColor(
-                game.outcome ===
-                  'jackpot'
-                  ? 0xffd700
-                  : game.outcome ===
-                      'win'
-                    ? 0x00ff00
-                    : 0xff0000
+                    `${current.points}pt`
+                })
+                .setColor(
+                  0xf1c40f
+                );
+
+            await button.update({
+              embeds: [embed],
+              components: [
+                createBackButton()
+              ]
+            });
+
+            return;
+          }
+
+          /*
+           * ==========================
+           * じゃんけん選択
+           * ==========================
+           */
+          if (
+            button.customId ===
+            'game_rps'
+          ) {
+            const row =
+              new ActionRowBuilder()
+                .addComponents(
+                  new ButtonBuilder()
+                    .setCustomId(
+                      'rps_rock'
+                    )
+                    .setLabel(
+                      'グー'
+                    )
+                    .setEmoji(
+                      '✊'
+                    )
+                    .setStyle(
+                      ButtonStyle.Primary
+                    ),
+
+                  new ButtonBuilder()
+                    .setCustomId(
+                      'rps_paper'
+                    )
+                    .setLabel(
+                      'パー'
+                    )
+                    .setEmoji(
+                      '✋'
+                    )
+                    .setStyle(
+                      ButtonStyle.Primary
+                    ),
+
+                  new ButtonBuilder()
+                    .setCustomId(
+                      'rps_scissors'
+                    )
+                    .setLabel(
+                      'チョキ'
+                    )
+                    .setEmoji(
+                      '✌️'
+                    )
+                    .setStyle(
+                      ButtonStyle.Primary
+                    )
+                );
+
+            await button.update({
+              embeds: [
+                new EmbedBuilder()
+                  .setTitle(
+                    '✊ じゃんけん'
+                  )
+                  .setDescription(
+                    '手を選んでください！'
+                  )
+                  .setColor(
+                    0x5865f2
+                  )
+              ],
+              components: [row]
+            });
+
+            return;
+          }
+
+          /*
+           * ==========================
+           * じゃんけん結果
+           * ==========================
+           */
+          if (
+            button.customId.startsWith(
+              'rps_'
+            )
+          ) {
+            const choice =
+              button.customId.replace(
+                'rps_',
+                ''
               );
 
-          return button.update({
-            embeds: [embed],
-            components: [
-              createBackButton()
-            ]
-          });
-        }
+            const game =
+              playRps(choice);
 
-        /*
-         * メニューへ戻る
-         */
-        if (
-          button.customId ===
-          'game_back'
-        ) {
-          const current =
-            getUser(
-              interaction.user.id,
-              interaction.user.username
+            let points = 0;
+            let text = '';
+
+            if (
+              game.result ===
+              'win'
+            ) {
+              points = 15;
+              text =
+                '🎉 勝ち！';
+            } else if (
+              game.result ===
+              'lose'
+            ) {
+              points = -5;
+              text =
+                '😢 負け…';
+            } else {
+              text =
+                '🤝 引き分け！';
+            }
+
+            const data =
+              recordGame({
+                userId:
+                  interaction.user.id,
+
+                username:
+                  interaction.user.username,
+
+                game:
+                  'rps',
+
+                result:
+                  game.result,
+
+                points,
+
+                metadata: {
+                  player:
+                    game.player,
+
+                  bot:
+                    game.bot
+                }
+              });
+
+            const embed =
+              new EmbedBuilder()
+                .setTitle(
+                  '✊ じゃんけん結果'
+                )
+                .setDescription(
+                  text
+                )
+                .addFields(
+                  {
+                    name:
+                      'あなた',
+                    value:
+                      game.playerName,
+                    inline: true
+                  },
+                  {
+                    name:
+                      'Bot',
+                    value:
+                      game.botName,
+                    inline: true
+                  },
+                  {
+                    name:
+                      'ポイント',
+                    value:
+                      formatPoints(
+                        points
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      '所持ポイント',
+                    value:
+                      `${data.points}pt`
+                  }
+                )
+                .setColor(
+                  getResultColor(
+                    game.result
+                  )
+                );
+
+            await button.update({
+              embeds: [embed],
+              components: [
+                createBackButton()
+              ]
+            });
+
+            return;
+          }
+
+          /*
+           * ==========================
+           * HIGH
+           * ==========================
+           */
+          if (
+            button.customId ===
+            'game_high'
+          ) {
+            await playHighLowGame(
+              button,
+              'high',
+              interaction
             );
 
-          return button.update({
-            embeds: [
-              createMenuEmbed(
-                current.points
-              )
-            ],
-            components:
-              createMenuRows()
-          });
+            return;
+          }
+
+          /*
+           * ==========================
+           * LOW
+           * ==========================
+           */
+          if (
+            button.customId ===
+            'game_low'
+          ) {
+            await playHighLowGame(
+              button,
+              'low',
+              interaction
+            );
+
+            return;
+          }
+
+          /*
+           * ==========================
+           * スロット
+           * ==========================
+           */
+          if (
+            button.customId ===
+            'game_slots'
+          ) {
+            const game =
+              playSlots();
+
+            let text;
+            let points;
+
+            if (
+              game.outcome ===
+              'jackpot'
+            ) {
+              text =
+                '🎉🎉 JACKPOT!! 🎉🎉';
+
+              points = 50;
+            } else if (
+              game.outcome ===
+              'win'
+            ) {
+              text =
+                '🎉 当たり！';
+
+              points = 15;
+            } else {
+              text =
+                '😢 ハズレ…';
+
+              points = -5;
+            }
+
+            const result =
+              game.outcome ===
+              'lose'
+                ? 'lose'
+                : 'win';
+
+            const data =
+              recordGame({
+                userId:
+                  interaction.user.id,
+
+                username:
+                  interaction.user.username,
+
+                game:
+                  'slots',
+
+                result,
+
+                points,
+
+                metadata: {
+                  slots:
+                    game.result,
+
+                  outcome:
+                    game.outcome
+                }
+              });
+
+            const embed =
+              new EmbedBuilder()
+                .setTitle(
+                  '🎰 スロット'
+                )
+                .setDescription(
+                  `# ${game.result.join(' | ')}\n\n${text}`
+                )
+                .addFields(
+                  {
+                    name:
+                      'ポイント',
+                    value:
+                      formatPoints(
+                        points
+                      ),
+                    inline: true
+                  },
+                  {
+                    name:
+                      '所持ポイント',
+                    value:
+                      `${data.points}pt`,
+                    inline: true
+                  }
+                )
+                .setColor(
+                  game.outcome ===
+                    'jackpot'
+                    ? 0xffd700
+                    : game.outcome ===
+                        'win'
+                      ? 0x00ff00
+                      : 0xff0000
+                );
+
+            await button.update({
+              embeds: [embed],
+              components: [
+                createBackButton()
+              ]
+            });
+
+            return;
+          }
+        } catch (error) {
+          console.error(
+            '❌ Game Button Error:',
+            error
+          );
+
+          /*
+           * まだ応答していない場合のみ
+           * エラーを返す
+           */
+          if (
+            !button.replied &&
+            !button.deferred
+          ) {
+            await button.reply({
+              content:
+                '❌ ゲーム処理中にエラーが発生しました。',
+              ephemeral: true
+            }).catch(
+              () => {}
+            );
+          }
         }
       }
     );
 
+    /*
+     * Collector終了時に
+     * メッセージを変更しない。
+     *
+     * ここでeditReplyすると、
+     * ゲーム結果画面を勝手に上書きするため。
+     */
     collector.on(
       'end',
-      async () => {
-        await interaction
-          .editReply({
-            components:
-              disableRows(
-                createMenuRows()
-              )
-          })
-          .catch(() => {});
+      () => {
+        console.log(
+          `🎮 Game collector終了: ${interaction.user.tag}`
+        );
       }
     );
   }
 };
 
 /*
- * メニューEmbed
+ * HIGH / LOW
  */
-function createMenuEmbed(
-  points
+async function playHighLowGame(
+  button,
+  choice,
+  interaction
 ) {
+  const game =
+    playHighLow(choice);
+
+  let points = 0;
+  let text = '';
+
+  if (
+    game.result ===
+    'win'
+  ) {
+    points = 20;
+    text =
+      '🎉 予想的中！';
+  } else if (
+    game.result ===
+    'lose'
+  ) {
+    points = -5;
+    text =
+      '😢 予想失敗…';
+  } else {
+    text =
+      '🤝 同じ数字でした！';
+  }
+
+  const data =
+    recordGame({
+      userId:
+        interaction.user.id,
+
+      username:
+        interaction.user.username,
+
+      game:
+        'highlow',
+
+      result:
+        game.result,
+
+      points,
+
+      metadata: {
+        choice,
+
+        first:
+          game.first,
+
+        second:
+          game.second
+      }
+    });
+
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        '🎯 HIGH & LOW'
+      )
+      .setDescription(
+        text
+      )
+      .addFields(
+        {
+          name:
+            '最初のカード',
+          value:
+            `🃏 ${game.first}`,
+          inline: true
+        },
+        {
+          name:
+            'あなたの予想',
+          value:
+            choice === 'high'
+              ? '⬆️ HIGH'
+              : '⬇️ LOW',
+          inline: true
+        },
+        {
+          name:
+            '次のカード',
+          value:
+            `🃏 ${game.second}`,
+          inline: true
+        },
+        {
+          name:
+            'ポイント',
+          value:
+            formatPoints(points),
+          inline: true
+        },
+        {
+          name:
+            '所持ポイント',
+          value:
+            `${data.points}pt`,
+          inline: true
+        }
+      )
+      .setColor(
+        getResultColor(
+          game.result
+        )
+      );
+
+  await button.update({
+    embeds: [embed],
+    components: [
+      createBackButton()
+    ]
+  });
+}
+
+/*
+ * ゲームメニュー
+ */
+function createMenuEmbed(points) {
   return new EmbedBuilder()
     .setTitle(
       '🎮 まぶ鯖ミニゲーム'
@@ -697,11 +829,13 @@ function createMenuEmbed(
         '🎯 HIGH & LOW\n' +
         '🎰 スロット'
     })
-    .setColor(0x5865f2);
+    .setColor(
+      0x5865f2
+    );
 }
 
 /*
- * メニューボタン
+ * ゲーム選択ボタン
  */
 function createMenuRows() {
   const row1 =
@@ -714,7 +848,9 @@ function createMenuRows() {
           .setLabel(
             'サイコロ'
           )
-          .setEmoji('🎲')
+          .setEmoji(
+            '🎲'
+          )
           .setStyle(
             ButtonStyle.Primary
           ),
@@ -726,7 +862,9 @@ function createMenuRows() {
           .setLabel(
             'コイン'
           )
-          .setEmoji('🪙')
+          .setEmoji(
+            '🪙'
+          )
           .setStyle(
             ButtonStyle.Primary
           ),
@@ -738,7 +876,9 @@ function createMenuRows() {
           .setLabel(
             'じゃんけん'
           )
-          .setEmoji('✊')
+          .setEmoji(
+            '✊'
+          )
           .setStyle(
             ButtonStyle.Success
           )
@@ -754,7 +894,9 @@ function createMenuRows() {
           .setLabel(
             'HIGH'
           )
-          .setEmoji('⬆️')
+          .setEmoji(
+            '⬆️'
+          )
           .setStyle(
             ButtonStyle.Secondary
           ),
@@ -766,7 +908,9 @@ function createMenuRows() {
           .setLabel(
             'LOW'
           )
-          .setEmoji('⬇️')
+          .setEmoji(
+            '⬇️'
+          )
           .setStyle(
             ButtonStyle.Secondary
           ),
@@ -778,7 +922,9 @@ function createMenuRows() {
           .setLabel(
             'スロット'
           )
-          .setEmoji('🎰')
+          .setEmoji(
+            '🎰'
+          )
           .setStyle(
             ButtonStyle.Danger
           )
@@ -803,29 +949,13 @@ function createBackButton() {
         .setLabel(
           'ゲーム選択に戻る'
         )
-        .setEmoji('🎮')
+        .setEmoji(
+          '🎮'
+        )
         .setStyle(
           ButtonStyle.Secondary
         )
     );
-}
-
-/*
- * ボタン無効化
- */
-function disableRows(rows) {
-  return rows.map(row => {
-    const buttons =
-      row.components.map(
-        component =>
-          ButtonBuilder
-            .from(component)
-            .setDisabled(true)
-      );
-
-    return new ActionRowBuilder()
-      .addComponents(buttons);
-  });
 }
 
 /*
@@ -840,7 +970,7 @@ function formatPoints(points) {
 }
 
 /*
- * 結果色
+ * 結果による色
  */
 function getResultColor(result) {
   if (result === 'win') {
