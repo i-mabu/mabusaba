@@ -1,6 +1,22 @@
 const {
-  EmbedBuilder
+  EmbedBuilder,
+  PermissionFlagsBits,
 } = require('discord.js');
+
+/*
+ * =========================================================
+ * 監査ログチャンネルID
+ * =========================================================
+ */
+
+function getAuditLogChannelId() {
+  return (
+    process.env.AUDIT_LOG_CHANNEL_ID ||
+    process.env.MOD_LOG_CHANNEL_ID ||
+    process.env.LOG_CHANNEL_ID ||
+    null
+  );
+}
 
 /*
  * =========================================================
@@ -13,22 +29,23 @@ async function sendAuditLog({
   title,
   description,
   color = 0x5865f2,
-  fields = []
+  fields = [],
 }) {
   try {
-    /*
-     * 環境変数から監査ログチャンネルを取得
-     *
-     * 例:
-     * AUDIT_LOG_CHANNEL_ID=123456789012345678
-     */
+    if (!guild) {
+      console.warn(
+        '⚠️ 監査ログ: guildがありません。'
+      );
+
+      return false;
+    }
 
     const channelId =
-      process.env.AUDIT_LOG_CHANNEL_ID;
+      getAuditLogChannelId();
 
     if (!channelId) {
       console.warn(
-        '⚠️ AUDIT_LOG_CHANNEL_ID が設定されていません。'
+        '⚠️ AUDIT_LOG_CHANNEL_ID / MOD_LOG_CHANNEL_ID / LOG_CHANNEL_ID が設定されていません。'
       );
 
       return false;
@@ -51,34 +68,137 @@ async function sendAuditLog({
       !channel.isTextBased()
     ) {
       console.warn(
-        '⚠️ 監査ログチャンネルがテキストチャンネルではありません。'
+        `⚠️ 監査ログチャンネルがテキストチャンネルではありません: ${channelId}`
       );
 
       return false;
     }
 
+    const me =
+      guild.members.me;
+
+    if (me) {
+      const permissions =
+        channel.permissionsFor(me);
+
+      if (
+        !permissions?.has(
+          PermissionFlagsBits.ViewChannel
+        )
+      ) {
+        console.error(
+          '❌ 監査ログチャンネルを見る権限がありません。'
+        );
+
+        return false;
+      }
+
+      if (
+        !permissions?.has(
+          PermissionFlagsBits.SendMessages
+        )
+      ) {
+        console.error(
+          '❌ 監査ログチャンネルへメッセージを送信する権限がありません。'
+        );
+
+        return false;
+      }
+
+      if (
+        !permissions?.has(
+          PermissionFlagsBits.EmbedLinks
+        )
+      ) {
+        console.error(
+          '❌ 監査ログチャンネルでEmbed Links権限がありません。'
+        );
+
+        return false;
+      }
+    }
+
     const embed =
       new EmbedBuilder()
-        .setTitle(title)
-        .setDescription(
-          description || null
+        .setTitle(
+          String(title || '監査ログ').slice(
+            0,
+            256
+          )
         )
-        .setColor(color)
+        .setColor(
+          color
+        )
         .setTimestamp();
 
     if (
-      fields &&
+      description
+    ) {
+      embed.setDescription(
+        String(description).slice(
+          0,
+          4096
+        )
+      );
+    }
+
+    if (
+      Array.isArray(fields) &&
       fields.length > 0
     ) {
-      embed.addFields(
-        fields.slice(0, 25)
-      );
+      const safeFields =
+        fields
+          .filter(
+            field =>
+              field &&
+              field.name &&
+              field.value
+          )
+          .slice(
+            0,
+            25
+          )
+          .map(
+            field => ({
+              name:
+                String(
+                  field.name
+                ).slice(
+                  0,
+                  256
+                ),
+
+              value:
+                String(
+                  field.value
+                ).slice(
+                  0,
+                  1024
+                ),
+
+              inline:
+                Boolean(
+                  field.inline
+                ),
+            })
+          );
+
+      if (
+        safeFields.length > 0
+      ) {
+        embed.addFields(
+          safeFields
+        );
+      }
     }
 
     await channel.send({
       embeds: [
         embed
-      ]
+      ],
+      allowedMentions: {
+        parse: [],
+      },
     });
 
     return true;
@@ -93,6 +213,69 @@ async function sendAuditLog({
   }
 }
 
+/*
+ * =========================================================
+ * Audit Log取得
+ * =========================================================
+ */
+
+async function fetchAuditEntry({
+  guild,
+  type,
+  targetId,
+  maxAge = 10000,
+}) {
+  try {
+    if (!guild) {
+      return null;
+    }
+
+    const logs =
+      await guild.fetchAuditLogs({
+        type,
+        limit: 10,
+      });
+
+    const now =
+      Date.now();
+
+    const entry =
+      logs.entries.find(
+        log => {
+          if (
+            targetId &&
+            log.target?.id !==
+              targetId
+          ) {
+            return false;
+          }
+
+          if (
+            now -
+              log.createdTimestamp >
+            maxAge
+          ) {
+            return false;
+          }
+
+          return true;
+        }
+      );
+
+    return entry || null;
+
+  } catch (error) {
+    console.error(
+      '❌ Discord監査ログ取得エラー:',
+      error
+    );
+
+    return null;
+  }
+}
+
 module.exports = {
-  sendAuditLog
+  sendAuditLog,
+  fetchAuditEntry,
+  getAuditLogChannelId,
 };

@@ -1,5 +1,5 @@
 const {
-  sendAuditLog
+  sendAuditLog,
 } = require('../utils/auditLog');
 
 module.exports = {
@@ -8,6 +8,10 @@ module.exports = {
 
   async execute(member) {
     try {
+      console.log(
+        `📤 guildMemberRemove: ${member.user.tag} (${member.id})`
+      );
+
       await sendAuditLog({
         guild:
           member.guild,
@@ -26,7 +30,7 @@ module.exports = {
             name: 'ユーザー',
             value:
               `${member.user.tag}\n\`${member.id}\``,
-            inline: true
+            inline: true,
           },
 
           {
@@ -34,19 +38,19 @@ module.exports = {
             value:
               member.joinedTimestamp
                 ? `<t:${Math.floor(
-                    member.joinedTimestamp / 1000
+                    member.joinedTimestamp /
+                      1000
                   )}:F>`
                 : '不明',
-            inline: true
-          }
-        ]
+            inline: true,
+          },
+        ],
       });
-
     } catch (error) {
       console.error(
         '❌ 退出監査ログエラー:',
         error
       );
     }
-  }
+  },
 };

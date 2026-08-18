@@ -1,44 +1,100 @@
 const {
-  EmbedBuilder
+  EmbedBuilder,
+  PermissionFlagsBits,
 } = require('discord.js');
 
 const {
   getWelcomeMessage,
-  getStoredEmbed
+  getStoredEmbed,
 } = require('../utils/welcomeMessage');
 
 const {
-  sendAuditLog
+  sendAuditLog,
 } = require('../utils/auditLog');
-
-/*
- * =========================================================
- * guildMemberAdd
- * =========================================================
- */
 
 module.exports = {
   name: 'guildMemberAdd',
   once: false,
 
   async execute(member) {
+    console.log(
+      `📥 guildMemberAdd: ${member.user.tag} (${member.id})`
+    );
+
     /*
-     * Welcome / 自動ロール / 監査ログの
-     * どれかが失敗しても他の処理を止めない。
+     * 自動ロール
      */
 
-    await handleAutoRole(
-      member
-    );
+    try {
+      await handleAutoRole(
+        member
+      );
+    } catch (error) {
+      console.error(
+        '❌ 自動ロール処理失敗:',
+        error
+      );
+    }
 
-    await handleWelcome(
-      member
-    );
+    /*
+     * Welcome
+     */
 
-    await handleAuditLog(
-      member
-    );
-  }
+    try {
+      await handleWelcome(
+        member
+      );
+    } catch (error) {
+      console.error(
+        '❌ Welcome処理失敗:',
+        error
+      );
+    }
+
+    /*
+     * 参加監査ログ
+     */
+
+    try {
+      await sendAuditLog({
+        guild:
+          member.guild,
+
+        title:
+          '📥 メンバー参加',
+
+        description:
+          `${member} がサーバーに参加しました。`,
+
+        color:
+          0x57f287,
+
+        fields: [
+          {
+            name: 'ユーザー',
+            value:
+              `${member.user.tag}\n\`${member.id}\``,
+            inline: true,
+          },
+
+          {
+            name: 'アカウント作成',
+            value:
+              `<t:${Math.floor(
+                member.user.createdTimestamp /
+                  1000
+              )}:F>`,
+            inline: true,
+          },
+        ],
+      });
+    } catch (error) {
+      console.error(
+        '❌ 参加監査ログ失敗:',
+        error
+      );
+    }
+  },
 };
 
 /*
@@ -50,154 +106,142 @@ module.exports = {
 async function handleAutoRole(
   member
 ) {
-  try {
-    /*
-     * 環境変数
-     *
-     * AUTO_ROLE_ID=123456789012345678
-     */
+  const roleId =
+    process.env.AUTO_ROLE_ID;
 
-    const roleId =
-      process.env.AUTO_ROLE_ID;
-
-    if (!roleId) {
-      console.warn(
-        '⚠️ AUTO_ROLE_ID が設定されていません。'
-      );
-
-      return;
-    }
-
-    const role =
-      await member.guild.roles.fetch(
-        roleId
-      );
-
-    if (!role) {
-      console.error(
-        `❌ 自動ロールが見つかりません: ${roleId}`
-      );
-
-      return;
-    }
-
-    /*
-     * @everyone
-     */
-
-    if (
-      role.id ===
-      member.guild.id
-    ) {
-      console.error(
-        '❌ @everyone を自動ロールに指定できません。'
-      );
-
-      return;
-    }
-
-    /*
-     * Botの最高ロール確認
-     */
-
-    const botMember =
-      member.guild.members.me;
-
-    if (!botMember) {
-      console.error(
-        '❌ Bot自身のGuildMemberを取得できません。'
-      );
-
-      return;
-    }
-
-    if (
-      !botMember.permissions.has(
-        'ManageRoles'
-      )
-    ) {
-      console.error(
-        '❌ Botに「ロールの管理」権限がありません。'
-      );
-
-      return;
-    }
-
-    if (
-      role.position >=
-      botMember.roles.highest.position
-    ) {
-      console.error(
-        `❌ 自動付与ロール「${role.name}」がBotの最高ロール以上にあります。`
-      );
-
-      return;
-    }
-
-    /*
-     * 既に持っている場合
-     */
-
-    if (
-      member.roles.cache.has(
-        role.id
-      )
-    ) {
-      return;
-    }
-
-    /*
-     * ロール付与
-     */
-
-    await member.roles.add(
-      role,
-      'まぶ鯖 自動ロール'
+  if (!roleId) {
+    console.warn(
+      '⚠️ AUTO_ROLE_ID が設定されていません。'
     );
 
-    console.log(
-      `✅ 自動ロール付与: ${member.user.tag} -> ${role.name}`
-    );
-
-    /*
-     * 監査ログ
-     */
-
-    await sendAuditLog({
-      guild:
-        member.guild,
-
-      title:
-        '🟢 自動ロール付与',
-
-      description:
-        `${member} に自動ロールを付与しました。`,
-
-      color:
-        0x57f287,
-
-      fields: [
-        {
-          name: 'ユーザー',
-          value:
-            `${member.user.tag}\n\`${member.id}\``,
-          inline: true
-        },
-        {
-          name: 'ロール',
-          value:
-            `${role}\n\`${role.id}\``,
-          inline: true
-        }
-      ]
-    });
-
-  } catch (error) {
-    console.error(
-      '❌ 自動ロール付与エラー:',
-      error
-    );
+    return;
   }
+
+  const role =
+    await member.guild.roles.fetch(
+      roleId
+    );
+
+  if (!role) {
+    console.error(
+      `❌ 自動ロールが見つかりません: ${roleId}`
+    );
+
+    return;
+  }
+
+  if (
+    role.id ===
+    member.guild.id
+  ) {
+    console.error(
+      '❌ @everyone は自動ロールに設定できません。'
+    );
+
+    return;
+  }
+
+  const botMember =
+    member.guild.members.me;
+
+  if (!botMember) {
+    console.error(
+      '❌ Bot自身のGuildMemberを取得できません。'
+    );
+
+    return;
+  }
+
+  if (
+    !botMember.permissions.has(
+      PermissionFlagsBits.ManageRoles
+    )
+  ) {
+    console.error(
+      '❌ Botに「ロールの管理」権限がありません。'
+    );
+
+    return;
+  }
+
+  if (
+    role.managed
+  ) {
+    console.error(
+      `❌ 管理ロールは付与できません: ${role.name}`
+    );
+
+    return;
+  }
+
+  if (
+    role.position >=
+    botMember.roles.highest.position
+  ) {
+    console.error(
+      `❌ 自動付与ロール「${role.name}」がBotの最高ロール以上にあります。`
+    );
+
+    return;
+  }
+
+  if (
+    member.roles.cache.has(
+      role.id
+    )
+  ) {
+    console.log(
+      `ℹ️ 既にロールを所持: ${member.user.tag} -> ${role.name}`
+    );
+
+    return;
+  }
+
+  await member.roles.add(
+    role,
+    'まぶ鯖 自動ロール'
+  );
+
+  console.log(
+    `✅ 自動ロール付与: ${member.user.tag} -> ${role.name}`
+  );
+
+  await sendAuditLog({
+    guild:
+      member.guild,
+
+    title:
+      '🟢 自動ロール付与',
+
+    description:
+      `${member} に自動ロールを付与しました。`,
+
+    color:
+      0x57f287,
+
+    fields: [
+      {
+        name: 'ユーザー',
+        value:
+          `${member.user.tag}\n\`${member.id}\``,
+        inline: true,
+      },
+
+      {
+        name: 'ロール',
+        value:
+          `${role}\n\`${role.id}\``,
+        inline: true,
+      },
+
+      {
+        name: '実行者',
+        value:
+          '🤖 まぶ鯖Bot（自動）',
+        inline: true,
+      },
+    ],
+  });
 }
 
 /*
@@ -209,183 +253,171 @@ async function handleAutoRole(
 async function handleWelcome(
   member
 ) {
-  try {
-    const welcome =
-      getWelcomeMessage(
-        member.guild.id
+  const welcome =
+    getWelcomeMessage(
+      member.guild.id
+    );
+
+  if (!welcome) {
+    console.log(
+      'ℹ️ Welcome設定なし'
+    );
+
+    return;
+  }
+
+  const channel =
+    await member.guild.channels.fetch(
+      welcome.channel_id
+    );
+
+  if (!channel) {
+    console.warn(
+      `⚠️ Welcomeチャンネルが見つかりません: ${welcome.channel_id}`
+    );
+
+    return;
+  }
+
+  if (
+    !channel.isTextBased()
+  ) {
+    console.warn(
+      '⚠️ Welcomeチャンネルがテキストチャンネルではありません。'
+    );
+
+    return;
+  }
+
+  const me =
+    member.guild.members.me;
+
+  if (me) {
+    const permissions =
+      channel.permissionsFor(me);
+
+    if (
+      !permissions?.has(
+        PermissionFlagsBits.ViewChannel
+      ) ||
+      !permissions?.has(
+        PermissionFlagsBits.SendMessages
+      )
+    ) {
+      console.error(
+        '❌ Welcomeチャンネルへの送信権限がありません。'
       );
 
-    if (!welcome) {
       return;
     }
+  }
 
-    const channel =
-      await member.guild.channels.fetch(
-        welcome.channel_id
+  const storedEmbed =
+    getStoredEmbed(
+      welcome
+    );
+
+  const embeds = [];
+
+  if (storedEmbed) {
+    const embed =
+      new EmbedBuilder();
+
+    if (
+      storedEmbed.title
+    ) {
+      embed.setTitle(
+        String(
+          storedEmbed.title
+        ).slice(
+          0,
+          256
+        )
       );
-
-    if (!channel) {
-      console.warn(
-        `⚠️ Welcomeチャンネルがありません: ${welcome.channel_id}`
-      );
-
-      return;
     }
 
     if (
-      !channel.isTextBased()
+      storedEmbed.description
     ) {
-      return;
-    }
-
-    const storedEmbed =
-      getStoredEmbed(
-        welcome
-      );
-
-    const embeds = [];
-
-    if (storedEmbed) {
-      const embed =
-        new EmbedBuilder();
-
-      if (
-        storedEmbed.title
-      ) {
-        embed.setTitle(
-          String(
-            storedEmbed.title
-          ).slice(
-            0,
-            256
+      embed.setDescription(
+        String(
+          storedEmbed.description
+        )
+          .replaceAll(
+            '{user}',
+            `<@${member.id}>`
           )
-        );
-      }
-
-      if (
-        storedEmbed.description
-      ) {
-        embed.setDescription(
-          String(
-            storedEmbed.description
-          ).slice(
+          .replaceAll(
+            '{username}',
+            member.user.username
+          )
+          .replaceAll(
+            '{server}',
+            member.guild.name
+          )
+          .slice(
             0,
             4000
           )
-        );
-      }
-
-      if (
-        storedEmbed.color !==
-          undefined &&
-        storedEmbed.color !==
-          null
-      ) {
-        embed.setColor(
-          Number(
-            storedEmbed.color
-          )
-        );
-      }
-
-      embed.setThumbnail(
-        member.user.displayAvatarURL({
-          size: 256
-        })
-      );
-
-      embeds.push(
-        embed
       );
     }
 
-    /*
-     * 通常content
-     */
-
-    let content =
-      welcome.content || '';
-
-    content =
-      String(content)
-        .replaceAll(
-          '{user}',
-          `<@${member.id}>`
+    if (
+      storedEmbed.color !==
+        undefined &&
+      storedEmbed.color !==
+        null
+    ) {
+      embed.setColor(
+        Number(
+          storedEmbed.color
         )
-        .replaceAll(
-          '{username}',
-          member.user.username
-        )
-        .replaceAll(
-          '{server}',
-          member.guild.name
-        );
+      );
+    }
 
-    await channel.send({
-      content:
-        content || undefined,
-
-      embeds
-    });
-
-    console.log(
-      `👋 Welcome送信: ${member.user.tag}`
+    embed.setThumbnail(
+      member.user.displayAvatarURL({
+        size: 256,
+      })
     );
 
-  } catch (error) {
-    console.error(
-      '❌ Welcome送信エラー:',
-      error
+    embeds.push(
+      embed
     );
   }
-}
 
-/*
- * =========================================================
- * 参加監査ログ
- * =========================================================
- */
+  let content =
+    welcome.content || '';
 
-async function handleAuditLog(
-  member
-) {
-  try {
-    await sendAuditLog({
-      guild:
-        member.guild,
+  content =
+    String(content)
+      .replaceAll(
+        '{user}',
+        `<@${member.id}>`
+      )
+      .replaceAll(
+        '{username}',
+        member.user.username
+      )
+      .replaceAll(
+        '{server}',
+        member.guild.name
+      );
 
-      title:
-        '📥 メンバー参加',
+  await channel.send({
+    content:
+      content || undefined,
 
-      description:
-        `${member} がサーバーに参加しました。`,
+    embeds,
 
-      color:
-        0x57f287,
+    allowedMentions: {
+      users: [
+        member.id
+      ],
+    },
+  });
 
-      fields: [
-        {
-          name: 'ユーザー',
-          value:
-            `${member.user.tag}\n\`${member.id}\``,
-          inline: true
-        },
-
-        {
-          name: 'アカウント作成',
-          value:
-            `<t:${Math.floor(
-              member.user.createdTimestamp / 1000
-            )}:F>`,
-          inline: true
-        }
-      ]
-    });
-
-  } catch (error) {
-    console.error(
-      '❌ 参加監査ログエラー:',
-      error
-    );
-  }
+  console.log(
+    `👋 Welcome送信: ${member.user.tag}`
+  );
 }

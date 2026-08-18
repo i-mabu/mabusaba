@@ -1,10 +1,11 @@
 const {
-  EmbedBuilder
-} = require('discord.js');
+  sendAuditLog,
+  fetchAuditEntry,
+} = require('../utils/auditLog');
 
 const {
-  sendAuditLog
-} = require('../utils/auditLog');
+  AuditLogEvent,
+} = require('discord.js');
 
 module.exports = {
   name: 'guildMemberUpdate',
@@ -21,10 +22,6 @@ module.exports = {
       const newRoles =
         newMember.roles.cache;
 
-      /*
-       * 追加されたロール
-       */
-
       const addedRoles =
         newRoles.filter(
           role =>
@@ -32,10 +29,6 @@ module.exports = {
               role.id
             )
         );
-
-      /*
-       * 削除されたロール
-       */
 
       const removedRoles =
         oldRoles.filter(
@@ -45,10 +38,6 @@ module.exports = {
             )
         );
 
-      /*
-       * 変更なし
-       */
-
       if (
         addedRoles.size === 0 &&
         removedRoles.size === 0
@@ -57,7 +46,30 @@ module.exports = {
       }
 
       /*
-       * 追加
+       * Discordの監査ログから
+       * 誰が操作したかを取得
+       */
+
+      const auditEntry =
+        await fetchAuditEntry({
+          guild:
+            newMember.guild,
+
+          type:
+            AuditLogEvent.MemberRoleUpdate,
+
+          targetId:
+            newMember.id,
+
+          maxAge:
+            15000,
+        });
+
+      const executor =
+        auditEntry?.executor;
+
+      /*
+       * ロール追加
        */
 
       if (
@@ -78,9 +90,17 @@ module.exports = {
 
           fields: [
             {
-              name: 'ユーザー',
+              name: '対象ユーザー',
               value:
-                `${newMember.user.tag}\n\`${newMember.id}\``
+                `${newMember.user.tag}\n\`${newMember.id}\``,
+            },
+
+            {
+              name: '実行者',
+              value:
+                executor
+                  ? `${executor.tag}\n\`${executor.id}\``
+                  : '不明',
             },
 
             {
@@ -95,14 +115,14 @@ module.exports = {
                   .slice(
                     0,
                     1024
-                  )
-            }
-          ]
+                  ),
+            },
+          ],
         });
       }
 
       /*
-       * 削除
+       * ロール削除
        */
 
       if (
@@ -123,9 +143,17 @@ module.exports = {
 
           fields: [
             {
-              name: 'ユーザー',
+              name: '対象ユーザー',
               value:
-                `${newMember.user.tag}\n\`${newMember.id}\``
+                `${newMember.user.tag}\n\`${newMember.id}\``,
+            },
+
+            {
+              name: '実行者',
+              value:
+                executor
+                  ? `${executor.tag}\n\`${executor.id}\``
+                  : '不明',
             },
 
             {
@@ -140,9 +168,9 @@ module.exports = {
                   .slice(
                     0,
                     1024
-                  )
-            }
-          ]
+                  ),
+            },
+          ],
         });
       }
 
@@ -152,5 +180,5 @@ module.exports = {
         error
       );
     }
-  }
+  },
 };
