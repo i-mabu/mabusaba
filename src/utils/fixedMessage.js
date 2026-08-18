@@ -2,10 +2,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
-const dataDir = path.join(
-  __dirname,
-  '../data'
-);
+const dataDir = path.join(__dirname, '../data');
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, {
@@ -14,15 +11,17 @@ if (!fs.existsSync(dataDir)) {
 }
 
 const db = new Database(
-  path.join(
-    dataDir,
-    'games.db'
-  )
+  path.join(dataDir, 'games.db')
 );
 
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 
+/*
+ * ========================================
+ * 固定メッセージテーブル
+ * ========================================
+ */
 db.exec(`
   CREATE TABLE IF NOT EXISTS fixed_messages (
     guild_id TEXT PRIMARY KEY,
@@ -48,27 +47,24 @@ db.exec(`
 `);
 
 /*
- * ==========================
- * Migration
- * ==========================
- *
- * 既存DBに新しいカラムがない場合に追加。
+ * ========================================
+ * 既存DBへのMigration
+ * ========================================
  */
 function ensureColumn(
   table,
   column,
   definition
 ) {
-  const columns =
-    db.prepare(
+  const columns = db
+    .prepare(
       `PRAGMA table_info(${table})`
-    ).all();
+    )
+    .all();
 
-  const exists =
-    columns.some(
-      item =>
-        item.name === column
-    );
+  const exists = columns.some(
+    item => item.name === column
+  );
 
   if (!exists) {
     db.exec(
@@ -101,6 +97,12 @@ ensureColumn(
   'embed_data',
   'TEXT'
 );
+
+/*
+ * ========================================
+ * SQL
+ * ========================================
+ */
 
 const getStmt = db.prepare(`
   SELECT *
@@ -145,24 +147,20 @@ const deleteStmt = db.prepare(`
 `);
 
 /*
- * ==========================
- * Get
- * ==========================
+ * ========================================
+ * 取得
+ * ========================================
  */
-function getFixedMessage(
-  guildId
-) {
+function getFixedMessage(guildId) {
   return (
-    getStmt.get(
-      guildId
-    ) || null
+    getStmt.get(guildId) || null
   );
 }
 
 /*
- * ==========================
- * Create
- * ==========================
+ * ========================================
+ * 作成
+ * ========================================
  */
 function createFixedMessage({
   guildId,
@@ -173,9 +171,7 @@ function createFixedMessage({
   userId
 }) {
   const existing =
-    getFixedMessage(
-      guildId
-    );
+    getFixedMessage(guildId);
 
   if (existing) {
     throw new Error(
@@ -190,7 +186,9 @@ function createFixedMessage({
     embed?.description || null;
 
   const embedColor =
-    embed?.color || null;
+    embed?.color != null
+      ? String(embed.color)
+      : null;
 
   const embedData =
     embed
@@ -216,9 +214,9 @@ function createFixedMessage({
 }
 
 /*
- * ==========================
- * Update
- * ==========================
+ * ========================================
+ * 更新
+ * ========================================
  */
 function updateFixedMessage({
   guildId,
@@ -229,9 +227,7 @@ function updateFixedMessage({
   userId
 }) {
   const existing =
-    getFixedMessage(
-      guildId
-    );
+    getFixedMessage(guildId);
 
   if (!existing) {
     throw new Error(
@@ -246,7 +242,9 @@ function updateFixedMessage({
     embed?.description || null;
 
   const embedColor =
-    embed?.color || null;
+    embed?.color != null
+      ? String(embed.color)
+      : null;
 
   const embedData =
     embed
@@ -271,26 +269,20 @@ function updateFixedMessage({
 }
 
 /*
- * ==========================
- * Delete
- * ==========================
+ * ========================================
+ * 削除
+ * ========================================
  */
-function deleteFixedMessage(
-  guildId
-) {
-  deleteStmt.run(
-    guildId
-  );
+function deleteFixedMessage(guildId) {
+  deleteStmt.run(guildId);
 }
 
 /*
- * ==========================
- * Embed取得
- * ==========================
+ * ========================================
+ * 保存済みEmbed取得
+ * ========================================
  */
-function getStoredEmbed(
-  fixed
-) {
+function getStoredEmbed(fixed) {
   if (
     !fixed ||
     !fixed.embed_data
@@ -302,7 +294,12 @@ function getStoredEmbed(
     return JSON.parse(
       fixed.embed_data
     );
-  } catch {
+  } catch (error) {
+    console.error(
+      'Failed to parse embed_data:',
+      error
+    );
+
     return null;
   }
 }

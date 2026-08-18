@@ -141,11 +141,10 @@ for (const file of eventFiles) {
 client.on(
   'interactionCreate',
   async interaction => {
-
     /*
-     * ==========================
+     * ========================================
      * Slash Command
-     * ==========================
+     * ========================================
      */
     if (
       interaction.isChatInputCommand()
@@ -165,24 +164,34 @@ client.on(
         );
       } catch (error) {
         console.error(
+          'Command error:',
           error
         );
 
-        if (
-          interaction.replied ||
-          interaction.deferred
-        ) {
-          await interaction.followUp({
-            content:
-              '❌ コマンド実行中にエラーが発生しました。',
-            ephemeral: true
-          });
-        } else {
-          await interaction.reply({
-            content:
-              '❌ コマンド実行中にエラーが発生しました。',
-            ephemeral: true
-          });
+        try {
+          if (
+            interaction.replied ||
+            interaction.deferred
+          ) {
+            await interaction.followUp({
+              content:
+                '❌ コマンド実行中にエラーが発生しました。',
+              flags:
+                MessageFlags.Ephemeral
+            });
+          } else {
+            await interaction.reply({
+              content:
+                '❌ コマンド実行中にエラーが発生しました。',
+              flags:
+                MessageFlags.Ephemeral
+            });
+          }
+        } catch (replyError) {
+          console.error(
+            'Reply error:',
+            replyError
+          );
         }
       }
 
@@ -190,15 +199,15 @@ client.on(
     }
 
     /*
-     * ==========================
+     * ========================================
      * Modal
-     * ==========================
+     * ========================================
      */
     if (
       interaction.isModalSubmit()
     ) {
       /*
-       * fixed-messageのModal
+       * fixed-message
        */
       if (
         interaction.customId ===
@@ -213,7 +222,8 @@ client.on(
 
         if (
           command &&
-          command.handleModal
+          typeof command.handleModal ===
+            'function'
         ) {
           try {
             await command.handleModal(
@@ -225,21 +235,36 @@ client.on(
               error
             );
 
-            if (
-              !interaction.replied &&
-              !interaction.deferred
-            ) {
-              await interaction.reply({
-                content:
-                  '❌ Modal処理中にエラーが発生しました。',
-                ephemeral: true
-              });
+            try {
+              if (
+                interaction.replied ||
+                interaction.deferred
+              ) {
+                await interaction.followUp({
+                  content:
+                    '❌ Modal処理中にエラーが発生しました。',
+                  flags:
+                    MessageFlags.Ephemeral
+                });
+              } else {
+                await interaction.reply({
+                  content:
+                    '❌ Modal処理中にエラーが発生しました。',
+                  flags:
+                    MessageFlags.Ephemeral
+                });
+              }
+            } catch (replyError) {
+              console.error(
+                'Modal reply error:',
+                replyError
+              );
             }
           }
         }
-      }
 
-      return;
+        return;
+      }
     }
   }
 );
