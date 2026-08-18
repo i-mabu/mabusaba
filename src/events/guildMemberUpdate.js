@@ -1,86 +1,156 @@
 const {
-  Events,
+  EmbedBuilder
 } = require('discord.js');
 
 const {
-  sendAuditLog,
-} = require('../utils/logger');
+  sendAuditLog
+} = require('../utils/auditLog');
 
 module.exports = {
-  name: Events.GuildMemberUpdate,
+  name: 'guildMemberUpdate',
+  once: false,
 
   async execute(
     oldMember,
     newMember
   ) {
-    const oldRoles =
-      new Set(oldMember.roles.cache.keys());
+    try {
+      const oldRoles =
+        oldMember.roles.cache;
 
-    const newRoles =
-      new Set(newMember.roles.cache.keys());
+      const newRoles =
+        newMember.roles.cache;
 
-    const added = [
-      ...newRoles,
-    ].filter(id =>
-      !oldRoles.has(id)
-    );
+      /*
+       * 追加されたロール
+       */
 
-    const removed = [
-      ...oldRoles,
-    ].filter(id =>
-      !newRoles.has(id)
-    );
-
-    if (
-      added.length === 0 &&
-      removed.length === 0
-    ) {
-      return;
-    }
-
-    const changes = [];
-
-    for (const id of added) {
-      const role =
-        newMember.guild.roles.cache.get(id);
-
-      if (role) {
-        changes.push(
-          `➕ ${role.name}`
+      const addedRoles =
+        newRoles.filter(
+          role =>
+            !oldRoles.has(
+              role.id
+            )
         );
-      }
-    }
 
-    for (const id of removed) {
-      const role =
-        newMember.guild.roles.cache.get(id);
+      /*
+       * 削除されたロール
+       */
 
-      if (role) {
-        changes.push(
-          `➖ ${role.name}`
+      const removedRoles =
+        oldRoles.filter(
+          role =>
+            !newRoles.has(
+              role.id
+            )
         );
-      }
-    }
 
-    await sendAuditLog(
-      newMember.guild,
-      {
-        title: '🎭 ロール変更',
-        color: 0x9b59b6,
-        fields: [
-          {
-            name: 'ユーザー',
-            value:
-              `${newMember.user.tag}`,
-          },
-          {
-            name: '変更',
-            value:
-              changes.join('\n') ||
-              '変更なし',
-          },
-        ],
+      /*
+       * 変更なし
+       */
+
+      if (
+        addedRoles.size === 0 &&
+        removedRoles.size === 0
+      ) {
+        return;
       }
-    );
-  },
+
+      /*
+       * 追加
+       */
+
+      if (
+        addedRoles.size > 0
+      ) {
+        await sendAuditLog({
+          guild:
+            newMember.guild,
+
+          title:
+            '➕ ロール付与',
+
+          description:
+            `${newMember} にロールが付与されました。`,
+
+          color:
+            0x57f287,
+
+          fields: [
+            {
+              name: 'ユーザー',
+              value:
+                `${newMember.user.tag}\n\`${newMember.id}\``
+            },
+
+            {
+              name: '追加されたロール',
+              value:
+                addedRoles
+                  .map(
+                    role =>
+                      `${role} \`${role.id}\``
+                  )
+                  .join('\n')
+                  .slice(
+                    0,
+                    1024
+                  )
+            }
+          ]
+        });
+      }
+
+      /*
+       * 削除
+       */
+
+      if (
+        removedRoles.size > 0
+      ) {
+        await sendAuditLog({
+          guild:
+            newMember.guild,
+
+          title:
+            '➖ ロール削除',
+
+          description:
+            `${newMember} からロールが削除されました。`,
+
+          color:
+            0xed4245,
+
+          fields: [
+            {
+              name: 'ユーザー',
+              value:
+                `${newMember.user.tag}\n\`${newMember.id}\``
+            },
+
+            {
+              name: '削除されたロール',
+              value:
+                removedRoles
+                  .map(
+                    role =>
+                      `${role} \`${role.id}\``
+                  )
+                  .join('\n')
+                  .slice(
+                    0,
+                    1024
+                  )
+            }
+          ]
+        });
+      }
+
+    } catch (error) {
+      console.error(
+        '❌ ロール変更監査ログエラー:',
+        error
+      );
+    }
+  }
 };
