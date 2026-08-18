@@ -17,17 +17,17 @@ const {
   getStoredEmbed
 } = require('../utils/fixedMessage');
 
-module.exports = {
-  /*
-   * ========================================
-   * Slash Command
-   * ========================================
-   */
+/*
+ * ==================================================
+ * コマンド本体
+ *
+ * 必ず data を持たせる
+ * ==================================================
+ */
+const command = {
   data: new SlashCommandBuilder()
     .setName('fixed-message')
-    .setDescription(
-      '固定メッセージを管理します'
-    )
+    .setDescription('固定メッセージを管理します')
 
     .setDefaultMemberPermissions(
       PermissionFlagsBits.Administrator
@@ -78,9 +78,9 @@ module.exports = {
     ),
 
   /*
-   * ========================================
-   * Slash Command実行
-   * ========================================
+   * ==================================================
+   * Slash Command
+   * ==================================================
    */
   async execute(interaction) {
     /*
@@ -101,7 +101,7 @@ module.exports = {
     }
 
     /*
-     * サーバー内限定
+     * サーバー限定
      */
     if (!interaction.guild) {
       await interaction.reply({
@@ -164,13 +164,15 @@ module.exports = {
       await showCommand(
         interaction
       );
+
+      return;
     }
   },
 
   /*
-   * ========================================
-   * Modal処理
-   * ========================================
+   * ==================================================
+   * Modal
+   * ==================================================
    */
   async handleModal(interaction) {
     if (
@@ -179,9 +181,6 @@ module.exports = {
       return false;
     }
 
-    /*
-     * CREATE
-     */
     if (
       interaction.customId ===
       'fixed-message-create'
@@ -193,9 +192,6 @@ module.exports = {
       return true;
     }
 
-    /*
-     * EDIT
-     */
     if (
       interaction.customId ===
       'fixed-message-edit'
@@ -212,9 +208,9 @@ module.exports = {
 };
 
 /*
- * ========================================
- * CREATE Modal
- * ========================================
+ * ==================================================
+ * CREATE Modal表示
+ * ==================================================
  */
 async function showCreateModal(
   interaction
@@ -267,7 +263,8 @@ async function showCreateModal(
   /*
    * 本文
    *
-   * Paragraphなので
+   * Paragraph
+   * ↓
    * Enterで改行可能
    */
   const descriptionInput =
@@ -333,9 +330,9 @@ async function showCreateModal(
 }
 
 /*
- * ========================================
- * EDIT Modal
- * ========================================
+ * ==================================================
+ * EDIT Modal表示
+ * ==================================================
  */
 async function showEditModal(
   interaction
@@ -376,32 +373,33 @@ async function showEditModal(
     fixed.embed_color ??
     0x5865F2;
 
-  /*
-   * 数値 → HEX
-   */
   if (
     typeof color === 'number'
   ) {
     color =
       color
         .toString(16)
-        .padStart(6, '0')
+        .padStart(
+          6,
+          '0'
+        )
         .toUpperCase();
   }
 
   color =
     String(color)
-      .replace(/^#/, '');
+      .replace(
+        /^#/,
+        ''
+      );
 
-  /*
-   * 6桁でなければデフォルト
-   */
   if (
     !/^[0-9a-fA-F]{6}$/.test(
       color
     )
   ) {
-    color = '5865F2';
+    color =
+      '5865F2';
   }
 
   const modal =
@@ -429,7 +427,10 @@ async function showEditModal(
       )
       .setMaxLength(256)
       .setValue(
-        title.slice(0, 256)
+        title.slice(
+          0,
+          256
+        )
       )
       .setRequired(true);
 
@@ -449,7 +450,10 @@ async function showEditModal(
       )
       .setMaxLength(4000)
       .setValue(
-        description.slice(0, 4000)
+        description.slice(
+          0,
+          4000
+        )
       )
       .setRequired(true);
 
@@ -496,16 +500,19 @@ async function showEditModal(
 }
 
 /*
- * ========================================
- * 色処理
- * ========================================
+ * ==================================================
+ * HEX → Number
+ * ==================================================
  */
 function parseColor(
   value
 ) {
-  let color =
+  const color =
     String(value || '')
-      .replace(/^#/, '')
+      .replace(
+        /^#/,
+        ''
+      )
       .trim();
 
   if (
@@ -523,9 +530,9 @@ function parseColor(
 }
 
 /*
- * ========================================
- * CREATE Modal処理
- * ========================================
+ * ==================================================
+ * CREATE
+ * ==================================================
  */
 async function handleCreateModal(
   interaction
@@ -533,9 +540,6 @@ async function handleCreateModal(
   const guildId =
     interaction.guildId;
 
-  /*
-   * 二重作成防止
-   */
   const existing =
     getFixedMessage(
       guildId
@@ -582,9 +586,6 @@ async function handleCreateModal(
     return;
   }
 
-  /*
-   * Embed
-   */
   const embedData = {
     title,
     description,
@@ -605,7 +606,7 @@ async function handleCreateModal(
 
   try {
     /*
-     * Discordへ送信
+     * 現在のチャンネルに投稿
      */
     const message =
       await interaction.channel.send({
@@ -615,7 +616,7 @@ async function handleCreateModal(
       });
 
     /*
-     * SQLite保存
+     * SQLite
      */
     createFixedMessage({
       guildId,
@@ -626,7 +627,8 @@ async function handleCreateModal(
       messageId:
         message.id,
 
-      content: null,
+      content:
+        null,
 
       embed:
         embedData,
@@ -643,7 +645,7 @@ async function handleCreateModal(
 
   } catch (error) {
     console.error(
-      '❌ Fixed message create error:',
+      'Fixed message create error:',
       error
     );
 
@@ -656,14 +658,32 @@ async function handleCreateModal(
 }
 
 /*
- * ========================================
- * EDIT Modal処理
- * ========================================
+ * ==================================================
+ * EDIT
+ *
+ * 重要：
+ * Discordには既存メッセージを
+ * 「一番下へ移動」するAPIがないため、
+ *
+ * 旧メッセージ削除
+ * ↓
+ * 新メッセージ作成
+ * ↓
+ * SQLiteのmessage_id更新
+ *
+ * とする。
+ * ==================================================
  */
-async function handleEditModal(interaction) {
-  const guildId = interaction.guildId;
+async function handleEditModal(
+  interaction
+) {
+  const guildId =
+    interaction.guildId;
 
-  const fixed = getFixedMessage(guildId);
+  const fixed =
+    getFixedMessage(
+      guildId
+    );
 
   if (!fixed) {
     await interaction.reply({
@@ -690,7 +710,10 @@ async function handleEditModal(interaction) {
       'fixed-color'
     );
 
-  const color = parseColor(colorInput);
+  const color =
+    parseColor(
+      colorInput
+    );
 
   if (color === null) {
     await interaction.reply({
@@ -709,12 +732,22 @@ async function handleEditModal(interaction) {
     color
   };
 
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description)
-    .setColor(color);
+  const embed =
+    new EmbedBuilder()
+      .setTitle(
+        title
+      )
+      .setDescription(
+        description
+      )
+      .setColor(
+        color
+      );
 
   try {
+    /*
+     * チャンネル
+     */
     const channel =
       await interaction.guild.channels.fetch(
         fixed.channel_id
@@ -722,13 +755,13 @@ async function handleEditModal(interaction) {
 
     if (!channel) {
       throw new Error(
-        '固定メッセージのチャンネルが見つかりません。'
+        '固定メッセージのチャンネルがありません。'
       );
     }
 
     /*
      * ========================================
-     * 古い固定メッセージを削除
+     * 旧メッセージ削除
      * ========================================
      */
     try {
@@ -738,32 +771,33 @@ async function handleEditModal(interaction) {
         );
 
       await oldMessage.delete();
+
     } catch (error) {
       /*
-       * 既に削除されていても続行
+       * 既に削除済みなら続行
        */
       console.log(
-        '旧固定メッセージは存在しないため、そのまま続行します。'
+        '旧固定メッセージは存在しません。'
       );
     }
 
     /*
      * ========================================
-     * 新しい固定メッセージを送信
+     * 新メッセージ作成
      *
-     * → チャンネルの一番下に配置される
+     * → チャンネル最下部
      * ========================================
      */
     const newMessage =
       await channel.send({
-        embeds: [embed]
+        embeds: [
+          embed
+        ]
       });
 
     /*
      * ========================================
      * SQLite更新
-     *
-     * 新しいmessage_idに変更
      * ========================================
      */
     updateFixedMessage({
@@ -775,7 +809,8 @@ async function handleEditModal(interaction) {
       messageId:
         newMessage.id,
 
-      content: null,
+      content:
+        null,
 
       embed:
         embedData,
@@ -787,28 +822,28 @@ async function handleEditModal(interaction) {
     await interaction.reply({
       content:
         '✅ 固定メッセージを更新しました。\n' +
-        '📌 チャンネルの下部へ再配置しました。',
+        '📌 チャンネルの最下部へ再配置しました。',
       flags: MessageFlags.Ephemeral
     });
 
   } catch (error) {
     console.error(
-      '❌ Fixed message edit error:',
+      'Fixed message edit error:',
       error
     );
 
     await interaction.reply({
       content:
-        '❌ 固定メッセージの更新に失敗しました。',
+        '❌ 固定メッセージを更新できませんでした。',
       flags: MessageFlags.Ephemeral
     });
   }
 }
 
 /*
- * ========================================
+ * ==================================================
  * DELETE
- * ========================================
+ * ==================================================
  */
 async function deleteCommand(
   interaction
@@ -837,6 +872,9 @@ async function deleteCommand(
         fixed.channel_id
       );
 
+    /*
+     * Discord側のメッセージ削除
+     */
     if (channel) {
       try {
         const message =
@@ -845,17 +883,17 @@ async function deleteCommand(
           );
 
         await message.delete();
-      } catch (error) {
-        /*
-         * Discord側ですでに削除されていても
-         * DBからは削除する
-         */
+
+      } catch {
         console.log(
           '固定メッセージは既に削除されています。'
         );
       }
     }
 
+    /*
+     * SQLite
+     */
     deleteFixedMessage(
       guildId
     );
@@ -868,7 +906,7 @@ async function deleteCommand(
 
   } catch (error) {
     console.error(
-      '❌ Fixed message delete error:',
+      'Fixed message delete error:',
       error
     );
 
@@ -881,9 +919,9 @@ async function deleteCommand(
 }
 
 /*
- * ========================================
+ * ==================================================
  * SHOW
- * ========================================
+ * ==================================================
  */
 async function showCommand(
   interaction
@@ -919,20 +957,23 @@ async function showCommand(
 
     if (!channel) {
       status =
-        '🔴 チャンネルが存在しません';
+        '🔴 チャンネルがありません';
     } else {
       await channel.messages.fetch(
         fixed.message_id
       );
     }
+
   } catch {
     status =
-      '🟠 メッセージが存在しません';
+      '🟠 メッセージがありません';
   }
 
   const updated =
     Math.floor(
-      fixed.updated_at
+      Number(
+        fixed.updated_at
+      )
     );
 
   const description =
@@ -994,3 +1035,12 @@ async function showCommand(
     flags: MessageFlags.Ephemeral
   });
 }
+
+/*
+ * ==================================================
+ * ここが重要
+ *
+ * module.exports.data が確実に存在する
+ * ==================================================
+ */
+module.exports = command;
