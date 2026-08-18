@@ -18,9 +18,12 @@ db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 
 /*
- * ========================================
- * 固定メッセージテーブル
- * ========================================
+ * ==================================================
+ * テーブル作成
+ * ==================================================
+ *
+ * content は既存DBとの互換性のため
+ * NOT NULLでも空文字を入れる。
  */
 db.exec(`
   CREATE TABLE IF NOT EXISTS fixed_messages (
@@ -28,7 +31,7 @@ db.exec(`
     channel_id TEXT NOT NULL,
     message_id TEXT NOT NULL,
 
-    content TEXT,
+    content TEXT NOT NULL DEFAULT '',
 
     embed_title TEXT,
     embed_description TEXT,
@@ -47,30 +50,33 @@ db.exec(`
 `);
 
 /*
- * ========================================
- * 既存DBへのMigration
- * ========================================
+ * ==================================================
+ * Migration
+ * ==================================================
  */
+
+function getColumns(table) {
+  return db
+    .prepare(`PRAGMA table_info(${table})`)
+    .all();
+}
+
 function ensureColumn(
   table,
   column,
   definition
 ) {
-  const columns = db
-    .prepare(
-      `PRAGMA table_info(${table})`
-    )
-    .all();
+  const columns = getColumns(table);
 
   const exists = columns.some(
     item => item.name === column
   );
 
   if (!exists) {
-    db.exec(
-      `ALTER TABLE ${table}
-       ADD COLUMN ${column} ${definition}`
-    );
+    db.exec(`
+      ALTER TABLE ${table}
+      ADD COLUMN ${column} ${definition}
+    `);
   }
 }
 
@@ -99,9 +105,9 @@ ensureColumn(
 );
 
 /*
- * ========================================
- * SQL
- * ========================================
+ * ==================================================
+ * SELECT
+ * ==================================================
  */
 
 const getStmt = db.prepare(`
@@ -109,6 +115,12 @@ const getStmt = db.prepare(`
   FROM fixed_messages
   WHERE guild_id = ?
 `);
+
+/*
+ * ==================================================
+ * INSERT
+ * ==================================================
+ */
 
 const insertStmt = db.prepare(`
   INSERT INTO fixed_messages (
@@ -126,6 +138,12 @@ const insertStmt = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
+/*
+ * ==================================================
+ * UPDATE
+ * ==================================================
+ */
+
 const updateStmt = db.prepare(`
   UPDATE fixed_messages
   SET
@@ -141,32 +159,38 @@ const updateStmt = db.prepare(`
   WHERE guild_id = ?
 `);
 
+/*
+ * ==================================================
+ * DELETE
+ * ==================================================
+ */
+
 const deleteStmt = db.prepare(`
   DELETE FROM fixed_messages
   WHERE guild_id = ?
 `);
 
 /*
- * ========================================
- * 取得
- * ========================================
+ * ==================================================
+ * GET
+ * ==================================================
  */
+
 function getFixedMessage(guildId) {
-  return (
-    getStmt.get(guildId) || null
-  );
+  return getStmt.get(guildId) || null;
 }
 
 /*
- * ========================================
- * 作成
- * ========================================
+ * ==================================================
+ * CREATE
+ * ==================================================
  */
+
 function createFixedMessage({
   guildId,
   channelId,
   messageId,
-  content = null,
+  content = '',
   embed = null,
   userId
 }) {
@@ -179,11 +203,21 @@ function createFixedMessage({
     );
   }
 
+  /*
+   * NULL禁止対策
+   *
+   * null / undefined を必ず空文字にする
+   */
+  const safeContent =
+    content == null
+      ? ''
+      : String(content);
+
   const embedTitle =
-    embed?.title || null;
+    embed?.title ?? null;
 
   const embedDescription =
-    embed?.description || null;
+    embed?.description ?? null;
 
   const embedColor =
     embed?.color != null
@@ -191,7 +225,7 @@ function createFixedMessage({
       : null;
 
   const embedData =
-    embed
+    embed != null
       ? JSON.stringify(embed)
       : null;
 
@@ -199,11 +233,17 @@ function createFixedMessage({
     guildId,
     channelId,
     messageId,
-    content,
+
+    /*
+     * NOT NULL
+     */
+    safeContent,
+
     embedTitle,
     embedDescription,
     embedColor,
     embedData,
+
     userId,
     userId
   );
@@ -214,15 +254,16 @@ function createFixedMessage({
 }
 
 /*
- * ========================================
- * 更新
- * ========================================
+ * ==================================================
+ * UPDATE
+ * ==================================================
  */
+
 function updateFixedMessage({
   guildId,
   channelId,
   messageId,
-  content = null,
+  content = '',
   embed = null,
   userId
 }) {
@@ -235,11 +276,19 @@ function updateFixedMessage({
     );
   }
 
+  /*
+   * NULL禁止対策
+   */
+  const safeContent =
+    content == null
+      ? ''
+      : String(content);
+
   const embedTitle =
-    embed?.title || null;
+    embed?.title ?? null;
 
   const embedDescription =
-    embed?.description || null;
+    embed?.description ?? null;
 
   const embedColor =
     embed?.color != null
@@ -247,18 +296,24 @@ function updateFixedMessage({
       : null;
 
   const embedData =
-    embed
+    embed != null
       ? JSON.stringify(embed)
       : null;
 
   updateStmt.run(
     channelId,
     messageId,
-    content,
+
+    /*
+     * NOT NULL
+     */
+    safeContent,
+
     embedTitle,
     embedDescription,
     embedColor,
     embedData,
+
     userId,
     guildId
   );
@@ -269,19 +324,21 @@ function updateFixedMessage({
 }
 
 /*
- * ========================================
- * 削除
- * ========================================
+ * ==================================================
+ * DELETE
+ * ==================================================
  */
+
 function deleteFixedMessage(guildId) {
   deleteStmt.run(guildId);
 }
 
 /*
- * ========================================
- * 保存済みEmbed取得
- * ========================================
+ * ==================================================
+ * EMBED取得
+ * ==================================================
  */
+
 function getStoredEmbed(fixed) {
   if (
     !fixed ||
@@ -296,7 +353,7 @@ function getStoredEmbed(fixed) {
     );
   } catch (error) {
     console.error(
-      'Failed to parse embed_data:',
+      '❌ embed_data parse error:',
       error
     );
 
