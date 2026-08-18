@@ -2,6 +2,12 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
+/*
+ * =========================================================
+ * Database
+ * =========================================================
+ */
+
 const dataDir = path.join(__dirname, '../data');
 
 if (!fs.existsSync(dataDir)) {
@@ -10,35 +16,45 @@ if (!fs.existsSync(dataDir)) {
   });
 }
 
-const db = new Database(
-  path.join(dataDir, 'games.db')
+const dbPath = path.join(
+  dataDir,
+  'games.db'
 );
+
+const db = new Database(dbPath);
 
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 
 /*
- * ==================================================
- * テーブル作成
- * ==================================================
+ * =========================================================
+ * Table
+ * =========================================================
  *
- * content は既存DBとの互換性のため
- * NOT NULLでも空文字を入れる。
+ * content は既存DBで NOT NULL の可能性があるため、
+ * DEFAULT '' を設定。
  */
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS fixed_messages (
     guild_id TEXT PRIMARY KEY,
+
     channel_id TEXT NOT NULL,
+
     message_id TEXT NOT NULL,
 
     content TEXT NOT NULL DEFAULT '',
 
     embed_title TEXT,
+
     embed_description TEXT,
+
     embed_color TEXT,
+
     embed_data TEXT,
 
     created_by TEXT NOT NULL,
+
     updated_by TEXT NOT NULL,
 
     created_at INTEGER NOT NULL
@@ -50,9 +66,9 @@ db.exec(`
 `);
 
 /*
- * ==================================================
+ * =========================================================
  * Migration
- * ==================================================
+ * =========================================================
  */
 
 function getColumns(table) {
@@ -105,9 +121,9 @@ ensureColumn(
 );
 
 /*
- * ==================================================
- * SELECT
- * ==================================================
+ * =========================================================
+ * Statements
+ * =========================================================
  */
 
 const getStmt = db.prepare(`
@@ -115,12 +131,6 @@ const getStmt = db.prepare(`
   FROM fixed_messages
   WHERE guild_id = ?
 `);
-
-/*
- * ==================================================
- * INSERT
- * ==================================================
- */
 
 const insertStmt = db.prepare(`
   INSERT INTO fixed_messages (
@@ -138,12 +148,6 @@ const insertStmt = db.prepare(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 
-/*
- * ==================================================
- * UPDATE
- * ==================================================
- */
-
 const updateStmt = db.prepare(`
   UPDATE fixed_messages
   SET
@@ -159,31 +163,28 @@ const updateStmt = db.prepare(`
   WHERE guild_id = ?
 `);
 
-/*
- * ==================================================
- * DELETE
- * ==================================================
- */
-
 const deleteStmt = db.prepare(`
   DELETE FROM fixed_messages
   WHERE guild_id = ?
 `);
 
 /*
- * ==================================================
- * GET
- * ==================================================
+ * =========================================================
+ * Get
+ * =========================================================
  */
 
 function getFixedMessage(guildId) {
-  return getStmt.get(guildId) || null;
+  return (
+    getStmt.get(guildId) ||
+    null
+  );
 }
 
 /*
- * ==================================================
- * CREATE
- * ==================================================
+ * =========================================================
+ * Create
+ * =========================================================
  */
 
 function createFixedMessage({
@@ -204,9 +205,7 @@ function createFixedMessage({
   }
 
   /*
-   * NULL禁止対策
-   *
-   * null / undefined を必ず空文字にする
+   * content は絶対に null にしない
    */
   const safeContent =
     content == null
@@ -233,17 +232,11 @@ function createFixedMessage({
     guildId,
     channelId,
     messageId,
-
-    /*
-     * NOT NULL
-     */
     safeContent,
-
     embedTitle,
     embedDescription,
     embedColor,
     embedData,
-
     userId,
     userId
   );
@@ -254,9 +247,9 @@ function createFixedMessage({
 }
 
 /*
- * ==================================================
- * UPDATE
- * ==================================================
+ * =========================================================
+ * Update
+ * =========================================================
  */
 
 function updateFixedMessage({
@@ -277,7 +270,7 @@ function updateFixedMessage({
   }
 
   /*
-   * NULL禁止対策
+   * content は絶対に null にしない
    */
   const safeContent =
     content == null
@@ -303,17 +296,11 @@ function updateFixedMessage({
   updateStmt.run(
     channelId,
     messageId,
-
-    /*
-     * NOT NULL
-     */
     safeContent,
-
     embedTitle,
     embedDescription,
     embedColor,
     embedData,
-
     userId,
     guildId
   );
@@ -324,22 +311,28 @@ function updateFixedMessage({
 }
 
 /*
- * ==================================================
- * DELETE
- * ==================================================
+ * =========================================================
+ * Delete
+ * =========================================================
  */
 
-function deleteFixedMessage(guildId) {
-  deleteStmt.run(guildId);
+function deleteFixedMessage(
+  guildId
+) {
+  deleteStmt.run(
+    guildId
+  );
 }
 
 /*
- * ==================================================
- * EMBED取得
- * ==================================================
+ * =========================================================
+ * Get Embed
+ * =========================================================
  */
 
-function getStoredEmbed(fixed) {
+function getStoredEmbed(
+  fixed
+) {
   if (
     !fixed ||
     !fixed.embed_data
@@ -360,6 +353,12 @@ function getStoredEmbed(fixed) {
     return null;
   }
 }
+
+/*
+ * =========================================================
+ * Export
+ * =========================================================
+ */
 
 module.exports = {
   getFixedMessage,

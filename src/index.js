@@ -1,151 +1,297 @@
-require('dotenv').config();
-
 const {
   Client,
-  Collection,
   GatewayIntentBits,
+  Partials,
+  Collection,
+  MessageFlags
 } = require('discord.js');
 
 const fs = require('fs');
 const path = require('path');
+
+/*
+ * =========================================================
+ * Environment
+ * =========================================================
+ */
+
+const TOKEN =
+  process.env.DISCORD_TOKEN ||
+  process.env.TOKEN;
+
+if (!TOKEN) {
+  console.error(
+    '❌ DISCORD_TOKEN または TOKEN が設定されていません。'
+  );
+
+  process.exit(1);
+}
+
+/*
+ * =========================================================
+ * Client
+ * =========================================================
+ */
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.GuildModeration,
+    GatewayIntentBits.MessageContent
   ],
+
+  partials: [
+    Partials.GuildMember,
+    Partials.User,
+    Partials.Message,
+    Partials.Channel
+  ]
 });
 
-client.commands = new Collection();
-
 /*
- * =========================
- * Commands
- * =========================
+ * =========================================================
+ * Collections
+ * =========================================================
  */
 
-const commandsPath = path.join(
-  __dirname,
-  'commands'
-);
+client.commands =
+  new Collection();
 
-const commandFiles = fs
-  .readdirSync(commandsPath)
-  .filter(file => file.endsWith('.js'));
+/*
+ * =========================================================
+ * Commands Loader
+ * =========================================================
+ */
 
-for (const file of commandFiles) {
-  const filePath = path.join(
-    commandsPath,
-    file
+const commandsPath =
+  path.join(
+    __dirname,
+    'commands'
   );
 
-  try {
-    const command = require(filePath);
-
-    if (
-      !command.data ||
-      !command.execute
-    ) {
-      console.warn(
-        `⚠️ 無効なコマンド: ${file}`
+if (
+  fs.existsSync(
+    commandsPath
+  )
+) {
+  const commandFiles =
+    fs
+      .readdirSync(
+        commandsPath
+      )
+      .filter(
+        file =>
+          file.endsWith('.js')
       );
-      continue;
+
+  for (
+    const file of commandFiles
+  ) {
+    const filePath =
+      path.join(
+        commandsPath,
+        file
+      );
+
+    try {
+      const command =
+        require(filePath);
+
+      /*
+       * Discord Slash Commandとして
+       * 必須のdata / executeを確認
+       */
+
+      if (
+        !command ||
+        !command.data
+      ) {
+        console.warn(
+          `⚠️ dataがないためスキップ: ${file}`
+        );
+
+        continue;
+      }
+
+      if (
+        typeof command.execute !==
+        'function'
+      ) {
+        console.warn(
+          `⚠️ executeがないためスキップ: ${file}`
+        );
+
+        continue;
+      }
+
+      const commandName =
+        command.data.name;
+
+      if (!commandName) {
+        console.warn(
+          `⚠️ command nameがないためスキップ: ${file}`
+        );
+
+        continue;
+      }
+
+      client.commands.set(
+        commandName,
+        command
+      );
+
+      console.log(
+        `✅ コマンド読み込み: ${commandName}`
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ コマンド読み込み失敗: ${file}`
+      );
+
+      console.error(
+        error
+      );
     }
-
-    client.commands.set(
-      command.data.name,
-      command
-    );
-
-    console.log(
-      `📦 Command loaded: /${command.data.name}`
-    );
-  } catch (error) {
-    console.error(
-      `❌ Command読み込み失敗: ${file}`,
-      error
-    );
   }
+
+} else {
+  console.warn(
+    `⚠️ commandsディレクトリがありません: ${commandsPath}`
+  );
 }
 
 /*
- * =========================
- * Events
- * =========================
+ * =========================================================
+ * Events Loader
+ * =========================================================
  */
 
-const eventsPath = path.join(
-  __dirname,
-  'events'
-);
-
-const eventFiles = fs
-  .readdirSync(eventsPath)
-  .filter(file => file.endsWith('.js'));
-
-for (const file of eventFiles) {
-  const filePath = path.join(
-    eventsPath,
-    file
+const eventsPath =
+  path.join(
+    __dirname,
+    'events'
   );
 
-  try {
-    const event = require(filePath);
-
-    if (!event.name || !event.execute) {
-      console.warn(
-        `⚠️ 無効なEvent: ${file}`
+if (
+  fs.existsSync(
+    eventsPath
+  )
+) {
+  const eventFiles =
+    fs
+      .readdirSync(
+        eventsPath
+      )
+      .filter(
+        file =>
+          file.endsWith('.js')
       );
-      continue;
+
+  for (
+    const file of eventFiles
+  ) {
+    const filePath =
+      path.join(
+        eventsPath,
+        file
+      );
+
+    try {
+      const event =
+        require(filePath);
+
+      /*
+       * events/xxx.js は
+       *
+       * module.exports = {
+       *   name: 'ready',
+       *   once: true,
+       *   execute(...) {}
+       * }
+       *
+       * の形式を想定
+       */
+
+      if (
+        !event ||
+        !event.name
+      ) {
+        console.warn(
+          `⚠️ event nameがないためスキップ: ${file}`
+        );
+
+        continue;
+      }
+
+      if (
+        typeof event.execute !==
+        'function'
+      ) {
+        console.warn(
+          `⚠️ event executeがないためスキップ: ${file}`
+        );
+
+        continue;
+      }
+
+      if (event.once) {
+        client.once(
+          event.name,
+          (...args) =>
+            event.execute(
+              ...args
+            )
+        );
+      } else {
+        client.on(
+          event.name,
+          (...args) =>
+            event.execute(
+              ...args
+            )
+        );
+      }
+
+      console.log(
+        `✅ イベント読み込み: ${event.name}`
+      );
+
+    } catch (error) {
+      console.error(
+        `❌ イベント読み込み失敗: ${file}`
+      );
+
+      console.error(
+        error
+      );
     }
-
-    if (event.once) {
-      client.once(
-        event.name,
-        (...args) =>
-          event.execute(
-            ...args,
-            client
-          )
-      );
-    } else {
-      client.on(
-        event.name,
-        (...args) =>
-          event.execute(
-            ...args,
-            client
-          )
-      );
-    }
-
-    console.log(
-      `⚡ Event loaded: ${event.name}`
-    );
-  } catch (error) {
-    console.error(
-      `❌ Event読み込み失敗: ${file}`,
-      error
-    );
   }
+
+} else {
+  console.warn(
+    `⚠️ eventsディレクトリがありません: ${eventsPath}`
+  );
 }
 
 /*
- * =========================
- * Interaction
- * =========================
+ * =========================================================
+ * Interaction Create
+ * =========================================================
  */
 
 client.on(
   'interactionCreate',
   async interaction => {
+
     /*
-     * ========================================
+     * =====================================================
      * Slash Command
-     * ========================================
+     * =====================================================
      */
+
     if (
       interaction.isChatInputCommand()
     ) {
@@ -155,6 +301,10 @@ client.on(
         );
 
       if (!command) {
+        console.warn(
+          `⚠️ コマンドが見つかりません: ${interaction.commandName}`
+        );
+
         return;
       }
 
@@ -162,53 +312,41 @@ client.on(
         await command.execute(
           interaction
         );
+
       } catch (error) {
         console.error(
-          'Command error:',
+          `❌ Command error: ${interaction.commandName}`
+        );
+
+        console.error(
           error
         );
 
-        try {
-          if (
-            interaction.replied ||
-            interaction.deferred
-          ) {
-            await interaction.followUp({
-              content:
-                '❌ コマンド実行中にエラーが発生しました。',
-              flags:
-                MessageFlags.Ephemeral
-            });
-          } else {
-            await interaction.reply({
-              content:
-                '❌ コマンド実行中にエラーが発生しました。',
-              flags:
-                MessageFlags.Ephemeral
-            });
-          }
-        } catch (replyError) {
-          console.error(
-            'Reply error:',
-            replyError
-          );
-        }
+        await sendErrorReply(
+          interaction,
+          'コマンド実行中にエラーが発生しました。'
+        );
       }
 
       return;
     }
 
     /*
-     * ========================================
-     * Modal
-     * ========================================
+     * =====================================================
+     * Modal Submit
+     * =====================================================
      */
+
     if (
       interaction.isModalSubmit()
     ) {
+
       /*
-       * fixed-message
+       * ---------------------------------------------------
+       * 固定メッセージ
+       * ---------------------------------------------------
        */
+
       if (
         interaction.customId ===
           'fixed-message-create' ||
@@ -221,60 +359,393 @@ client.on(
           );
 
         if (
-          command &&
-          typeof command.handleModal ===
-            'function'
+          !command
         ) {
-          try {
-            await command.handleModal(
-              interaction
-            );
-          } catch (error) {
-            console.error(
-              'Modal error:',
-              error
-            );
+          console.error(
+            '❌ fixed-message コマンドが読み込まれていません。'
+          );
 
-            try {
-              if (
-                interaction.replied ||
-                interaction.deferred
-              ) {
-                await interaction.followUp({
-                  content:
-                    '❌ Modal処理中にエラーが発生しました。',
-                  flags:
-                    MessageFlags.Ephemeral
-                });
-              } else {
-                await interaction.reply({
-                  content:
-                    '❌ Modal処理中にエラーが発生しました。',
-                  flags:
-                    MessageFlags.Ephemeral
-                });
-              }
-            } catch (replyError) {
-              console.error(
-                'Modal reply error:',
-                replyError
-              );
-            }
-          }
+          await sendErrorReply(
+            interaction,
+            '固定メッセージ機能を読み込めませんでした。'
+          );
+
+          return;
+        }
+
+        if (
+          typeof command.handleModal !==
+          'function'
+        ) {
+          console.error(
+            '❌ fixed-message.handleModal が存在しません。'
+          );
+
+          await sendErrorReply(
+            interaction,
+            '固定メッセージのModal処理が見つかりません。'
+          );
+
+          return;
+        }
+
+        try {
+          await command.handleModal(
+            interaction
+          );
+
+        } catch (error) {
+          console.error(
+            '❌ Fixed message modal error:'
+          );
+
+          console.error(
+            error
+          );
+
+          await sendErrorReply(
+            interaction,
+            '固定メッセージの処理中にエラーが発生しました。'
+          );
         }
 
         return;
       }
+
+      /*
+       * ---------------------------------------------------
+       * その他のModal
+       * ---------------------------------------------------
+       *
+       * customIdを持つコマンドに
+       * handleModalがある場合は自動転送
+       */
+
+      for (
+        const [
+          commandName,
+          command
+        ] of client.commands
+      ) {
+        if (
+          typeof command.handleModal !==
+          'function'
+        ) {
+          continue;
+        }
+
+        try {
+          const handled =
+            await command.handleModal(
+              interaction
+            );
+
+          if (
+            handled === true
+          ) {
+            return;
+          }
+
+        } catch (error) {
+          console.error(
+            `❌ Modal error: ${commandName}`
+          );
+
+          console.error(
+            error
+          );
+
+          await sendErrorReply(
+            interaction,
+            'Modal処理中にエラーが発生しました。'
+          );
+
+          return;
+        }
+      }
+
+      return;
+    }
+
+    /*
+     * =====================================================
+     * Button
+     * =====================================================
+     */
+
+    if (
+      interaction.isButton()
+    ) {
+
+      /*
+       * 各コマンドのhandleButtonへ
+       */
+
+      for (
+        const [
+          commandName,
+          command
+        ] of client.commands
+      ) {
+        if (
+          typeof command.handleButton !==
+          'function'
+        ) {
+          continue;
+        }
+
+        try {
+          const handled =
+            await command.handleButton(
+              interaction
+            );
+
+          if (
+            handled === true
+          ) {
+            return;
+          }
+
+        } catch (error) {
+          console.error(
+            `❌ Button error: ${commandName}`
+          );
+
+          console.error(
+            error
+          );
+
+          await sendErrorReply(
+            interaction,
+            'ボタン処理中にエラーが発生しました。'
+          );
+
+          return;
+        }
+      }
+
+      return;
+    }
+
+    /*
+     * =====================================================
+     * String Select Menu
+     * =====================================================
+     */
+
+    if (
+      interaction.isStringSelectMenu()
+    ) {
+
+      for (
+        const [
+          commandName,
+          command
+        ] of client.commands
+      ) {
+        if (
+          typeof command.handleSelectMenu !==
+          'function'
+        ) {
+          continue;
+        }
+
+        try {
+          const handled =
+            await command.handleSelectMenu(
+              interaction
+            );
+
+          if (
+            handled === true
+          ) {
+            return;
+          }
+
+        } catch (error) {
+          console.error(
+            `❌ SelectMenu error: ${commandName}`
+          );
+
+          console.error(
+            error
+          );
+
+          await sendErrorReply(
+            interaction,
+            'メニュー処理中にエラーが発生しました。'
+          );
+
+          return;
+        }
+      }
+
+      return;
+    }
+
+    /*
+     * =====================================================
+     * User Select Menu
+     * =====================================================
+     */
+
+    if (
+      interaction.isUserSelectMenu()
+    ) {
+
+      for (
+        const [
+          commandName,
+          command
+        ] of client.commands
+      ) {
+        if (
+          typeof command.handleUserSelectMenu !==
+          'function'
+        ) {
+          continue;
+        }
+
+        try {
+          const handled =
+            await command.handleUserSelectMenu(
+              interaction
+            );
+
+          if (
+            handled === true
+          ) {
+            return;
+          }
+
+        } catch (error) {
+          console.error(
+            `❌ UserSelectMenu error: ${commandName}`
+          );
+
+          console.error(
+            error
+          );
+
+          await sendErrorReply(
+            interaction,
+            'ユーザー選択処理中にエラーが発生しました。'
+          );
+
+          return;
+        }
+      }
+
+      return;
     }
   }
 );
 
 /*
- * =========================
- * Login
- * =========================
+ * =========================================================
+ * Error Reply
+ * =========================================================
  */
 
-client.login(
-  process.env.DISCORD_TOKEN
+async function sendErrorReply(
+  interaction,
+  message
+) {
+  try {
+
+    if (
+      interaction.replied ||
+      interaction.deferred
+    ) {
+      await interaction.followUp({
+        content:
+          `❌ ${message}`,
+        flags:
+          MessageFlags.Ephemeral
+      });
+
+      return;
+    }
+
+    await interaction.reply({
+      content:
+        `❌ ${message}`,
+      flags:
+        MessageFlags.Ephemeral
+    });
+
+  } catch (error) {
+    console.error(
+      '❌ Error reply failed:',
+      error
+    );
+  }
+}
+
+/*
+ * =========================================================
+ * Client Errors
+ * =========================================================
+ */
+
+client.on(
+  'error',
+  error => {
+    console.error(
+      '❌ Discord Client Error:',
+      error
+    );
+  }
 );
+
+client.on(
+  'warn',
+  warning => {
+    console.warn(
+      '⚠️ Discord Client Warning:',
+      warning
+    );
+  }
+);
+
+process.on(
+  'unhandledRejection',
+  error => {
+    console.error(
+      '❌ Unhandled Promise Rejection:',
+      error
+    );
+  }
+);
+
+process.on(
+  'uncaughtException',
+  error => {
+    console.error(
+      '❌ Uncaught Exception:',
+      error
+    );
+  }
+);
+
+/*
+ * =========================================================
+ * Login
+ * =========================================================
+ */
+
+client
+  .login(TOKEN)
+  .then(() => {
+    console.log(
+      '🔄 Discordへ接続しています...'
+    );
+  })
+  .catch(error => {
+    console.error(
+      '❌ Discord Login Error:',
+      error
+    );
+
+    process.exit(1);
+  });
