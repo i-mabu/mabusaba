@@ -660,16 +660,10 @@ async function handleCreateModal(
  * EDIT Modal処理
  * ========================================
  */
-async function handleEditModal(
-  interaction
-) {
-  const guildId =
-    interaction.guildId;
+async function handleEditModal(interaction) {
+  const guildId = interaction.guildId;
 
-  const fixed =
-    getFixedMessage(
-      guildId
-    );
+  const fixed = getFixedMessage(guildId);
 
   if (!fixed) {
     await interaction.reply({
@@ -696,10 +690,7 @@ async function handleEditModal(
       'fixed-color'
     );
 
-  const color =
-    parseColor(
-      colorInput
-    );
+  const color = parseColor(colorInput);
 
   if (color === null) {
     await interaction.reply({
@@ -718,22 +709,12 @@ async function handleEditModal(
     color
   };
 
-  const embed =
-    new EmbedBuilder()
-      .setTitle(
-        title
-      )
-      .setDescription(
-        description
-      )
-      .setColor(
-        color
-      );
+  const embed = new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(description)
+    .setColor(color);
 
   try {
-    /*
-     * チャンネル取得
-     */
     const channel =
       await interaction.guild.channels.fetch(
         fixed.channel_id
@@ -746,25 +727,44 @@ async function handleEditModal(
     }
 
     /*
-     * メッセージ取得
+     * ========================================
+     * 古い固定メッセージを削除
+     * ========================================
      */
-    const message =
-      await channel.messages.fetch(
-        fixed.message_id
+    try {
+      const oldMessage =
+        await channel.messages.fetch(
+          fixed.message_id
+        );
+
+      await oldMessage.delete();
+    } catch (error) {
+      /*
+       * 既に削除されていても続行
+       */
+      console.log(
+        '旧固定メッセージは存在しないため、そのまま続行します。'
       );
+    }
 
     /*
-     * 既存メッセージを編集
+     * ========================================
+     * 新しい固定メッセージを送信
+     *
+     * → チャンネルの一番下に配置される
+     * ========================================
      */
-    await message.edit({
-      content: null,
-      embeds: [
-        embed
-      ]
-    });
+    const newMessage =
+      await channel.send({
+        embeds: [embed]
+      });
 
     /*
+     * ========================================
      * SQLite更新
+     *
+     * 新しいmessage_idに変更
+     * ========================================
      */
     updateFixedMessage({
       guildId,
@@ -773,7 +773,7 @@ async function handleEditModal(
         channel.id,
 
       messageId:
-        message.id,
+        newMessage.id,
 
       content: null,
 
@@ -786,7 +786,8 @@ async function handleEditModal(
 
     await interaction.reply({
       content:
-        '✅ 固定メッセージを更新しました。',
+        '✅ 固定メッセージを更新しました。\n' +
+        '📌 チャンネルの下部へ再配置しました。',
       flags: MessageFlags.Ephemeral
     });
 
@@ -798,8 +799,7 @@ async function handleEditModal(
 
     await interaction.reply({
       content:
-        '❌ 固定メッセージを編集できませんでした。\n' +
-        'メッセージが削除されていないか確認してください。',
+        '❌ 固定メッセージの更新に失敗しました。',
       flags: MessageFlags.Ephemeral
     });
   }
