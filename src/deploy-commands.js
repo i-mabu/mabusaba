@@ -8,95 +8,79 @@ const {
 const fs = require('fs');
 const path = require('path');
 
-// ==============================
-// Environment Check
-// ==============================
-
-const {
-  DISCORD_TOKEN,
-  CLIENT_ID,
-  GUILD_ID,
-} = process.env;
-
-if (!DISCORD_TOKEN) {
-  console.error('❌ DISCORD_TOKEN が .env に設定されていません。');
-  process.exit(1);
-}
-
-if (!CLIENT_ID) {
-  console.error('❌ CLIENT_ID が .env に設定されていません。');
-  process.exit(1);
-}
-
-if (!GUILD_ID) {
-  console.error('❌ GUILD_ID が .env に設定されていません。');
-  process.exit(1);
-}
-
-// ==============================
-// Load Commands
-// ==============================
-
 const commands = [];
 
-const commandsPath = path.join(__dirname, 'commands');
-
-if (!fs.existsSync(commandsPath)) {
-  console.error('❌ commands フォルダが見つかりません。');
-  process.exit(1);
-}
+const commandsPath = path.join(
+  __dirname,
+  'commands'
+);
 
 const commandFiles = fs
   .readdirSync(commandsPath)
   .filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-  const filePath = path.join(commandsPath, file);
-  const command = require(filePath);
+  const filePath = path.join(
+    commandsPath,
+    file
+  );
 
-  if (!command.data || !command.execute) {
-    console.warn(
-      `⚠️ ${file} は正しいコマンド形式ではありません。スキップします。`
+  try {
+    const command = require(filePath);
+
+    if (!command.data) {
+      console.warn(
+        `⚠️ dataがないためスキップ: ${file}`
+      );
+      continue;
+    }
+
+    commands.push(
+      command.data.toJSON()
     );
-    continue;
+
+    console.log(
+      `📦 登録: /${command.data.name}`
+    );
+  } catch (error) {
+    console.error(
+      `❌ 読み込み失敗: ${file}`,
+      error
+    );
   }
-
-  commands.push(command.data.toJSON());
-
-  console.log(`📦 コマンド読み込み: /${command.data.name}`);
 }
-
-// ==============================
-// Deploy Commands
-// ==============================
 
 const rest = new REST({
   version: '10',
-}).setToken(DISCORD_TOKEN);
+}).setToken(
+  process.env.DISCORD_TOKEN
+);
 
 (async () => {
   try {
-    console.log('');
-    console.log('🔄 Slash Commandを登録しています...');
-    console.log(`📡 Server ID: ${GUILD_ID}`);
-    console.log(`📦 Command数: ${commands.length}`);
-    console.log('');
+    console.log(
+      `🔄 ${commands.length}個のコマンドを登録します...`
+    );
 
     await rest.put(
       Routes.applicationGuildCommands(
-        CLIENT_ID,
-        GUILD_ID
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
       ),
       {
         body: commands,
       }
     );
 
-    console.log('✅ Slash Commandの登録が完了しました！');
-    console.log('');
+    console.log(
+      '✅ Slash Commandの登録完了'
+    );
   } catch (error) {
-    console.error('❌ Slash Commandの登録に失敗しました。');
-    console.error(error);
+    console.error(
+      '❌ Slash Command登録失敗:',
+      error
+    );
+
     process.exit(1);
   }
 })();

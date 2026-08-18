@@ -3,20 +3,28 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
+const {
+  isModerator,
+} = require('../utils/permissions');
+
+const {
+  sendAuditLog,
+} = require('../utils/logger');
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('mute')
-    .setDescription('ユーザーをタイムアウトします')
+    .setDescription('メンバーをタイムアウトします')
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('タイムアウトするユーザー')
+        .setDescription('対象ユーザー')
         .setRequired(true)
     )
     .addIntegerOption(option =>
       option
         .setName('minutes')
-        .setDescription('タイムアウト時間（分）')
+        .setDescription('時間（分）')
         .setMinValue(1)
         .setMaxValue(40320)
         .setRequired(true)
@@ -25,24 +33,23 @@ module.exports = {
       option
         .setName('reason')
         .setDescription('理由')
-        .setMaxLength(500)
-        .setRequired(false)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ModerateMembers
     ),
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has(
-      PermissionFlagsBits.ModerateMembers
-    )) {
+    if (!isModerator(interaction.member)) {
       return interaction.reply({
-        content: '❌ タイムアウト権限がありません。',
+        content:
+          '❌ モデレーター権限が必要です。',
         ephemeral: true,
       });
     }
 
-    const user = interaction.options.getUser('user');
+    const user =
+      interaction.options.getUser('user');
+
     const minutes =
       interaction.options.getInteger('minutes');
 
@@ -50,13 +57,15 @@ module.exports = {
       interaction.options.getString('reason') ||
       '理由なし';
 
-    const member = await interaction.guild.members
-      .fetch(user.id)
-      .catch(() => null);
+    const member =
+      await interaction.guild.members
+        .fetch(user.id)
+        .catch(() => null);
 
     if (!member) {
       return interaction.reply({
-        content: '❌ そのユーザーはサーバーにいません。',
+        content:
+          '❌ 対象メンバーが見つかりません。',
         ephemeral: true,
       });
     }
@@ -64,67 +73,45 @@ module.exports = {
     if (!member.moderatable) {
       return interaction.reply({
         content:
-          '❌ このユーザーをタイムアウトできません。',
+          '❌ このメンバーをMuteできません。',
         ephemeral: true,
       });
     }
 
-    try {
-      await member.timeout(
-        minutes * 60 * 1000,
-        `${interaction.user.tag}: ${reason}`
-      );
+    await member.timeout(
+      minutes * 60 * 1000,
+      `${reason} / 実行者: ${interaction.user.tag}`
+    );
 
-      await interaction.reply(
-        `🔇 **${user.tag}** を **${minutes}分**タイムアウトしました。\n` +
-        `理由: ${reason}`
-      );
+    await interaction.reply({
+      content:
+        `🔇 ${user.tag} を${minutes}分Muteしました。`,
+    });
 
-      await sendModLog(interaction, {
-        title: '🔇 タイムアウト',
-        color: 0xfee75c,
-        user,
-        reason: `${minutes}分\n${reason}`,
-      });
-    } catch (error) {
-      console.error('mute error:', error);
-
-      await interaction.reply({
-        content: '❌ タイムアウトに失敗しました。',
-        ephemeral: true,
-      });
-    }
+    await sendAuditLog(
+      interaction.guild,
+      {
+        title: '🔇 Mute',
+        color: 0xffcc00,
+        fields: [
+          {
+            name: '対象',
+            value: `${user.tag}`,
+          },
+          {
+            name: '実行者',
+            value: `${interaction.user.tag}`,
+          },
+          {
+            name: '時間',
+            value: `${minutes}分`,
+          },
+          {
+            name: '理由',
+            value: reason,
+          },
+        ],
+      }
+    );
   },
 };
-
-async function sendModLog(interaction, data) {
-  const channelId = process.env.MOD_LOG_CHANNEL_ID;
-  if (!channelId) return;
-
-  const channel =
-    interaction.guild.channels.cache.get(channelId);
-
-  if (!channel) return;
-
-  await channel.send({
-    embeds: [{
-      title: data.title,
-      color: data.color,
-      fields: [
-        {
-          name: '対象ユーザー',
-          value: `${data.user.tag}\n${data.user.id}`,
-        },
-        {
-          name: '実行者',
-          value: `${interaction.user.tag}\n${interaction.user.id}`,
-        },
-        {
-          name: '内容',
-          value: data.reason,
-        },
-      ],
-      timestamp: new Date().toISOString(),
-    }],
-  }).catch(console.error);
-}

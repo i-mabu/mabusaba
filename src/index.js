@@ -2,17 +2,12 @@ require('dotenv').config();
 
 const {
   Client,
-  GatewayIntentBits,
   Collection,
-  Events,
+  GatewayIntentBits,
 } = require('discord.js');
 
 const fs = require('fs');
 const path = require('path');
-
-// ==============================
-// Client
-// ==============================
 
 const client = new Client({
   intents: [
@@ -23,131 +18,178 @@ const client = new Client({
   ],
 });
 
-// ==============================
-// Commands
-// ==============================
-
 client.commands = new Collection();
 
-const commandsPath = path.join(__dirname, 'commands');
+/*
+ * =========================
+ * Commands
+ * =========================
+ */
 
-if (fs.existsSync(commandsPath)) {
-  const commandFiles = fs
-    .readdirSync(commandsPath)
-    .filter(file => file.endsWith('.js'));
+const commandsPath = path.join(
+  __dirname,
+  'commands'
+);
 
-  for (const file of commandFiles) {
-    const filePath = path.join(commandsPath, file);
+const commandFiles = fs
+  .readdirSync(commandsPath)
+  .filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+  const filePath = path.join(
+    commandsPath,
+    file
+  );
+
+  try {
     const command = require(filePath);
 
-    if (!command.data || !command.execute) {
+    if (
+      !command.data ||
+      !command.execute
+    ) {
       console.warn(
-        `[WARNING] ${file} に data または execute がありません。`
+        `⚠️ 無効なコマンド: ${file}`
       );
       continue;
     }
 
-    client.commands.set(command.data.name, command);
+    client.commands.set(
+      command.data.name,
+      command
+    );
+
+    console.log(
+      `📦 Command loaded: /${command.data.name}`
+    );
+  } catch (error) {
+    console.error(
+      `❌ Command読み込み失敗: ${file}`,
+      error
+    );
   }
 }
 
-// ==============================
-// Events
-// ==============================
+/*
+ * =========================
+ * Events
+ * =========================
+ */
 
-const eventsPath = path.join(__dirname, 'events');
+const eventsPath = path.join(
+  __dirname,
+  'events'
+);
 
-if (fs.existsSync(eventsPath)) {
-  const eventFiles = fs
-    .readdirSync(eventsPath)
-    .filter(file => file.endsWith('.js'));
+const eventFiles = fs
+  .readdirSync(eventsPath)
+  .filter(file => file.endsWith('.js'));
 
-  for (const file of eventFiles) {
-    const filePath = path.join(eventsPath, file);
+for (const file of eventFiles) {
+  const filePath = path.join(
+    eventsPath,
+    file
+  );
+
+  try {
     const event = require(filePath);
 
     if (!event.name || !event.execute) {
       console.warn(
-        `[WARNING] ${file} に name または execute がありません。`
+        `⚠️ 無効なEvent: ${file}`
       );
       continue;
     }
 
     if (event.once) {
-      client.once(event.name, (...args) => event.execute(...args, client));
+      client.once(
+        event.name,
+        (...args) =>
+          event.execute(
+            ...args,
+            client
+          )
+      );
     } else {
-      client.on(event.name, (...args) => event.execute(...args, client));
+      client.on(
+        event.name,
+        (...args) =>
+          event.execute(
+            ...args,
+            client
+          )
+      );
     }
+
+    console.log(
+      `⚡ Event loaded: ${event.name}`
+    );
+  } catch (error) {
+    console.error(
+      `❌ Event読み込み失敗: ${file}`,
+      error
+    );
   }
 }
 
-// ==============================
-// Interaction Handler
-// ==============================
+/*
+ * =========================
+ * Interaction
+ * =========================
+ */
 
-client.on(Events.InteractionCreate, async interaction => {
-  // Slash Command
-  if (interaction.isChatInputCommand()) {
-    const command = client.commands.get(interaction.commandName);
+client.on(
+  'interactionCreate',
+  async interaction => {
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
+
+    const command =
+      client.commands.get(
+        interaction.commandName
+      );
 
     if (!command) {
-      console.warn(
-        `コマンド「${interaction.commandName}」が見つかりません。`
-      );
       return;
     }
 
     try {
-      await command.execute(interaction, client);
+      await command.execute(
+        interaction
+      );
     } catch (error) {
       console.error(
-        `コマンド「${interaction.commandName}」の実行中にエラーが発生しました:`,
+        `/${interaction.commandName} 実行エラー:`,
         error
       );
 
-      const message = {
-        content: '❌ コマンドの実行中にエラーが発生しました。',
-        ephemeral: true,
-      };
+      const message =
+        '❌ コマンドの実行中にエラーが発生しました。';
 
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp(message).catch(console.error);
+      if (
+        interaction.replied ||
+        interaction.deferred
+      ) {
+        await interaction.editReply({
+          content: message,
+        }).catch(() => {});
       } else {
-        await interaction.reply(message).catch(console.error);
+        await interaction.reply({
+          content: message,
+          ephemeral: true,
+        }).catch(() => {});
       }
     }
   }
-});
+);
 
-// ==============================
-// Error Handling
-// ==============================
+/*
+ * =========================
+ * Login
+ * =========================
+ */
 
-client.on(Events.Error, error => {
-  console.error('Discord Client Error:', error);
-});
-
-client.on(Events.Warn, warning => {
-  console.warn('Discord Warning:', warning);
-});
-
-process.on('unhandledRejection', error => {
-  console.error('Unhandled Promise Rejection:', error);
-});
-
-process.on('uncaughtException', error => {
-  console.error('Uncaught Exception:', error);
-});
-
-// ==============================
-// Login
-// ==============================
-
-if (!process.env.DISCORD_TOKEN) {
-  console.error(
-    '❌ DISCORD_TOKEN が .env に設定されていません。'
-  );
-  process.exit(1);
-}
-
-client.login(process.env.DISCORD_TOKEN);
+client.login(
+  process.env.DISCORD_TOKEN
+);

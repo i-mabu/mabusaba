@@ -6,12 +6,11 @@ const {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('userinfo')
-    .setDescription('ユーザーの情報を表示します')
+    .setDescription('ユーザー情報を表示します')
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('情報を表示するユーザー')
-        .setRequired(false)
+        .setDescription('対象ユーザー')
     ),
 
   async execute(interaction) {
@@ -19,47 +18,34 @@ module.exports = {
       interaction.options.getUser('user') ||
       interaction.user;
 
-    const member = await interaction.guild.members
-      .fetch(user.id)
-      .catch(() => null);
+    const member =
+      await interaction.guild.members
+        .fetch(user.id)
+        .catch(() => null);
 
     const embed = new EmbedBuilder()
-      .setTitle(`👤 ${user.username} の情報`)
-      .setThumbnail(user.displayAvatarURL({ size: 256 }))
+      .setTitle(`👤 ${user.tag}`)
+      .setThumbnail(user.displayAvatarURL())
       .addFields(
         {
-          name: 'ユーザー名',
-          value: user.username,
-          inline: true,
-        },
-        {
-          name: 'ID',
+          name: '🆔 ID',
           value: user.id,
-          inline: true,
         },
         {
-          name: 'Bot',
-          value: user.bot ? 'はい 🤖' : 'いいえ',
-          inline: true,
-        },
-        {
-          name: 'アカウント作成日',
+          name: '📅 アカウント作成',
           value: `<t:${Math.floor(
             user.createdTimestamp / 1000
           )}:F>`,
-          inline: false,
         }
       )
-      .setColor(0x5865f2)
-      .setTimestamp();
+      .setColor(0x5865f2);
 
     if (member) {
       embed.addFields({
-        name: 'サーバー参加日',
+        name: '📅 サーバー参加',
         value: `<t:${Math.floor(
           member.joinedTimestamp / 1000
         )}:F>`,
-        inline: false,
       });
     }
 

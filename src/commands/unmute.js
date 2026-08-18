@@ -3,50 +3,49 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
+const {
+  isModerator,
+} = require('../utils/permissions');
+
+const {
+  sendAuditLog,
+} = require('../utils/logger');
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('unmute')
-    .setDescription('ユーザーのタイムアウトを解除します')
+    .setDescription('タイムアウトを解除します')
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('タイムアウトを解除するユーザー')
+        .setDescription('対象ユーザー')
         .setRequired(true)
-    )
-    .addStringOption(option =>
-      option
-        .setName('reason')
-        .setDescription('理由')
-        .setMaxLength(500)
-        .setRequired(false)
     )
     .setDefaultMemberPermissions(
       PermissionFlagsBits.ModerateMembers
     ),
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has(
-      PermissionFlagsBits.ModerateMembers
-    )) {
+    if (!isModerator(interaction.member)) {
       return interaction.reply({
-        content: '❌ タイムアウト権限がありません。',
+        content:
+          '❌ モデレーター権限が必要です。',
         ephemeral: true,
       });
     }
 
-    const user = interaction.options.getUser('user');
+    const user =
+      interaction.options.getUser('user');
 
-    const reason =
-      interaction.options.getString('reason') ||
-      '理由なし';
-
-    const member = await interaction.guild.members
-      .fetch(user.id)
-      .catch(() => null);
+    const member =
+      await interaction.guild.members
+        .fetch(user.id)
+        .catch(() => null);
 
     if (!member) {
       return interaction.reply({
-        content: '❌ そのユーザーはサーバーにいません。',
+        content:
+          '❌ 対象メンバーが見つかりません。',
         ephemeral: true,
       });
     }
@@ -54,67 +53,37 @@ module.exports = {
     if (!member.moderatable) {
       return interaction.reply({
         content:
-          '❌ このユーザーのタイムアウトを解除できません。',
+          '❌ このメンバーを操作できません。',
         ephemeral: true,
       });
     }
 
-    try {
-      await member.timeout(
-        null,
-        `${interaction.user.tag}: ${reason}`
-      );
+    await member.timeout(
+      null,
+      `Mute解除 / 実行者: ${interaction.user.tag}`
+    );
 
-      await interaction.reply(
-        `🔊 **${user.tag}** のタイムアウトを解除しました。\n` +
-        `理由: ${reason}`
-      );
+    await interaction.reply({
+      content:
+        `🔊 ${user.tag} のMuteを解除しました。`,
+    });
 
-      await sendModLog(interaction, {
-        title: '🔊 タイムアウト解除',
-        color: 0x57f287,
-        user,
-        reason,
-      });
-    } catch (error) {
-      console.error('unmute error:', error);
-
-      await interaction.reply({
-        content: '❌ タイムアウト解除に失敗しました。',
-        ephemeral: true,
-      });
-    }
+    await sendAuditLog(
+      interaction.guild,
+      {
+        title: '🔊 Mute解除',
+        color: 0x00ff00,
+        fields: [
+          {
+            name: '対象',
+            value: `${user.tag}`,
+          },
+          {
+            name: '実行者',
+            value: `${interaction.user.tag}`,
+          },
+        ],
+      }
+    );
   },
 };
-
-async function sendModLog(interaction, data) {
-  const channelId = process.env.MOD_LOG_CHANNEL_ID;
-  if (!channelId) return;
-
-  const channel =
-    interaction.guild.channels.cache.get(channelId);
-
-  if (!channel) return;
-
-  await channel.send({
-    embeds: [{
-      title: data.title,
-      color: data.color,
-      fields: [
-        {
-          name: '対象ユーザー',
-          value: `${data.user.tag}\n${data.user.id}`,
-        },
-        {
-          name: '実行者',
-          value: `${interaction.user.tag}\n${interaction.user.id}`,
-        },
-        {
-          name: '理由',
-          value: data.reason,
-        },
-      ],
-      timestamp: new Date().toISOString(),
-    }],
-  }).catch(console.error);
-}

@@ -7,242 +7,171 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+const {
+  isAdmin,
+  isModerator,
+  canManageGuild,
+} = require('../utils/permissions');
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('test')
-    .setDescription('まぶ鯖Botの機能を診断します')
-    .setDefaultMemberPermissions(
-      PermissionFlagsBits.Administrator
-    ),
+    .setDescription('Botの機能を権限別に診断します'),
 
   async execute(interaction) {
     await interaction.deferReply({
       ephemeral: true,
     });
 
-    const client = interaction.client;
-    const guild = interaction.guild;
+    const member = interaction.member;
+
+    const admin = isAdmin(member);
+    const moderator = isModerator(member);
+    const manager = canManageGuild(member);
 
     const results = [];
 
-    // ==============================
-    // Bot
-    // ==============================
+    /*
+     * 基本
+     */
 
     results.push({
-      name: '🤖 Bot接続',
+      name: '🤖 Bot',
       value: '✅ 正常',
+      inline: true,
     });
 
     results.push({
-      name: '📡 WebSocket Ping',
-      value: `${client.ws.ping}ms`,
+      name: '📡 Ping',
+      value: `${interaction.client.ws.ping}ms`,
+      inline: true,
     });
 
-    // ==============================
-    // Commands
-    // ==============================
+    /*
+     * 権限レベル
+     */
 
-    const commandsPath = path.join(
-      __dirname
-    );
+    let level = '一般ユーザー';
 
-    const commandFiles = fs
-      .readdirSync(commandsPath)
-      .filter(file => file.endsWith('.js'));
+    if (admin) {
+      level = '👑 Administrator';
+    } else if (manager) {
+      level = '🛠️ Server Manager';
+    } else if (moderator) {
+      level = '🛡️ Moderator';
+    }
 
     results.push({
-      name: '📦 コマンド読み込み',
-      value: `✅ ${commandFiles.length}個`,
+      name: '🔐 実行者権限',
+      value: level,
     });
 
-    // ==============================
-    // Events
-    // ==============================
+    /*
+     * モデレーター以上
+     */
 
-    const eventsPath = path.join(
-      __dirname,
-      '../events'
-    );
+    if (moderator) {
+      const checks = [
+        [
+          PermissionFlagsBits.KickMembers,
+          'Kick',
+        ],
+        [
+          PermissionFlagsBits.BanMembers,
+          'Ban',
+        ],
+        [
+          PermissionFlagsBits.ModerateMembers,
+          'Mute',
+        ],
+      ];
 
-    if (fs.existsSync(eventsPath)) {
-      const eventFiles = fs
-        .readdirSync(eventsPath)
-        .filter(file => file.endsWith('.js'));
-
-      results.push({
-        name: '⚡ Event',
-        value: `✅ ${eventFiles.length}個`,
-      });
-    } else {
-      results.push({
-        name: '⚡ Event',
-        value: '❌ eventsフォルダがありません',
-      });
-    }
-
-    // ==============================
-    // Environment
-    // ==============================
-
-    const envChecks = [
-      ['WELCOME_CHANNEL_ID', '👋 Welcome'],
-      ['LOG_CHANNEL_ID', '📝 Log'],
-      ['AUTO_ROLE_ID', '🎭 Auto Role'],
-      ['MOD_LOG_CHANNEL_ID', '🛡️ Mod Log'],
-    ];
-
-    for (const [envName, label] of envChecks) {
-      results.push({
-        name: label,
-        value: process.env[envName]
-          ? '✅ 設定済み'
-          : '⚠️ 未設定',
-      });
-    }
-
-    // ==============================
-    // Channels
-    // ==============================
-
-    const channelChecks = [
-      ['WELCOME_CHANNEL_ID', '👋 Welcome Channel'],
-      ['LOG_CHANNEL_ID', '📝 Log Channel'],
-      ['MOD_LOG_CHANNEL_ID', '🛡️ Mod Log Channel'],
-    ];
-
-    for (const [envName, label] of channelChecks) {
-      const channelId = process.env[envName];
-
-      if (!channelId) continue;
-
-      const channel =
-        guild.channels.cache.get(channelId);
-
-      results.push({
-        name: label,
-        value: channel
-          ? `✅ ${channel.name}`
-          : '❌ チャンネルが見つかりません',
-      });
-    }
-
-    // ==============================
-    // Auto Role
-    // ==============================
-
-    if (process.env.AUTO_ROLE_ID) {
-      const role = guild.roles.cache.get(
-        process.env.AUTO_ROLE_ID
-      );
-
-      if (!role) {
+      for (const [permission, name] of checks) {
         results.push({
-          name: '🎭 Auto Role',
-          value: '❌ ロールが見つかりません',
-        });
-      } else {
-        const botMember = guild.members.me;
-
-        const canManage =
-          botMember &&
-          role.position <
-            botMember.roles.highest.position;
-
-        results.push({
-          name: '🎭 Auto Role',
-          value: canManage
-            ? `✅ ${role.name}`
-            : `⚠️ ${role.name}（Botより上位）`,
+          name: `🔧 ${name}`,
+          value:
+            member.permissions.has(permission)
+              ? '✅ 使用可能'
+              : '❌ 使用不可',
+          inline: true,
         });
       }
     }
 
-    // ==============================
-    // Bot Permissions
-    // ==============================
+    /*
+     * サーバー管理者以上
+     */
 
-    const botMember = guild.members.me;
-
-    if (botMember) {
-      const permissions = [
-        [
-          PermissionFlagsBits.ViewChannel,
-          'チャンネルを見る',
-        ],
-        [
-          PermissionFlagsBits.SendMessages,
-          'メッセージ送信',
-        ],
-        [
-          PermissionFlagsBits.EmbedLinks,
-          '埋め込みリンク',
-        ],
-        [
-          PermissionFlagsBits.ManageMessages,
-          'メッセージ管理',
-        ],
-        [
-          PermissionFlagsBits.KickMembers,
-          'キック',
-        ],
-        [
-          PermissionFlagsBits.BanMembers,
-          'BAN',
-        ],
-        [
-          PermissionFlagsBits.ModerateMembers,
-          'タイムアウト',
-        ],
-        [
-          PermissionFlagsBits.ManageRoles,
-          'ロール管理',
-        ],
-      ];
-
-      const missing = permissions
-        .filter(([permission]) =>
-          !botMember.permissions.has(permission)
-        )
-        .map(([, name]) => name);
+    if (manager || admin) {
+      const commandFiles = fs
+        .readdirSync(__dirname)
+        .filter(file =>
+          file.endsWith('.js')
+        );
 
       results.push({
-        name: '🔐 Bot権限',
-        value: missing.length === 0
-          ? '✅ 必要権限あり'
-          : `⚠️ 不足: ${missing.join(', ')}`,
+        name: '📦 Commands',
+        value: `✅ ${commandFiles.length}個`,
       });
+
+      const eventsPath = path.join(
+        __dirname,
+        '../events'
+      );
+
+      if (fs.existsSync(eventsPath)) {
+        const eventFiles = fs
+          .readdirSync(eventsPath)
+          .filter(file =>
+            file.endsWith('.js')
+          );
+
+        results.push({
+          name: '⚡ Events',
+          value: `✅ ${eventFiles.length}個`,
+        });
+      }
+
+      const envs = [
+        ['WELCOME_CHANNEL_ID', '👋 Welcome'],
+        ['LOG_CHANNEL_ID', '📝 Log'],
+        ['MOD_LOG_CHANNEL_ID', '🛡️ Mod Log'],
+        ['AUTO_ROLE_ID', '🎭 Auto Role'],
+      ];
+
+      for (const [env, label] of envs) {
+        results.push({
+          name: label,
+          value: process.env[env]
+            ? '✅ 設定済み'
+            : '❌ 未設定',
+          inline: true,
+        });
+      }
     }
 
-    // ==============================
-    // Guild
-    // ==============================
-
-    results.push({
-      name: '🏠 サーバー',
-      value: guild.name,
-    });
-
-    results.push({
-      name: '👥 メンバー',
-      value: `${guild.memberCount}人`,
-    });
-
-    // ==============================
-    // Result
-    // ==============================
+    /*
+     * Embed
+     */
 
     const embed = new EmbedBuilder()
       .setTitle('🧪 まぶ鯖Bot 機能診断')
       .setDescription(
-        'Botの現在の状態をチェックしました。'
+        '実行者の権限に応じた診断結果です。'
       )
       .addFields(results)
-      .setColor(0x5865f2)
+      .setTimestamp()
+      .setColor(
+        admin
+          ? 0xff0000
+          : moderator
+            ? 0xffa500
+            : 0x5865f2
+      )
       .setFooter({
-        text: `実行者: ${interaction.user.tag}`,
-      })
-      .setTimestamp();
+        text:
+          `実行者: ${interaction.user.tag}`,
+      });
 
     await interaction.editReply({
       embeds: [embed],

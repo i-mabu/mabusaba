@@ -1,44 +1,38 @@
-const { SlashCommandBuilder, EmbedBuilder } = require("discord.js");
+const {
+  SlashCommandBuilder,
+  EmbedBuilder,
+} = require('discord.js');
 
 module.exports = {
   data: new SlashCommandBuilder()
-    .setName("help")
-    .setDescription("まぶ鯖Botのコマンド一覧を表示します"),
+    .setName('help')
+    .setDescription('Botのコマンド一覧を表示します'),
 
   async execute(interaction) {
     const embed = new EmbedBuilder()
-      .setTitle("🤖 まぶ鯖Bot ヘルプ")
-      .setDescription("現在使用できるコマンド一覧です。")
+      .setTitle('📚 まぶ鯖Bot コマンド一覧')
       .addFields(
         {
-          name: "🏓 基本",
+          name: '🌐 一般',
           value:
-            "`/ping` — Botの応答速度を確認\n" + "`/help` — このヘルプを表示",
+            '`/ping`\n' +
+            '`/help`\n' +
+            '`/server`\n' +
+            '`/userinfo`\n' +
+            '`/test`',
         },
         {
-          name: "👤 ユーザー",
-          value: "`/userinfo` — ユーザー情報を表示",
-        },
-        {
-          name: "🏠 サーバー",
-          value: "`/server` — まぶ鯖のサーバー情報を表示",
-        },
-        {
-          name: "🛡️ 管理",
+          name: '🛡️ モデレーション',
           value:
-            "`/clear` — メッセージ削除\n" +
-            "`/kick` — ユーザーをキック\n" +
-            "`/ban` — ユーザーをBAN\n" +
-            "`/mute` — タイムアウト\n" +
-            "`/unmute` — タイムアウト解除\n" +
-            "`/warn` — ユーザーに警告",
-        },
+            '`/warn`\n' +
+            '`/mute`\n' +
+            '`/unmute`\n' +
+            '`/kick`\n' +
+            '`/ban`\n' +
+            '`/clear`',
+        }
       )
-      .setColor(0x5865f2)
-      .setFooter({
-        text: "まぶ鯖 Bot",
-      })
-      .setTimestamp();
+      .setColor(0x5865f2);
 
     await interaction.reply({
       embeds: [embed],

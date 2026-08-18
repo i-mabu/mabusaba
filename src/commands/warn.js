@@ -3,21 +3,28 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
+const {
+  isModerator,
+} = require('../utils/permissions');
+
+const {
+  sendAuditLog,
+} = require('../utils/logger');
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('warn')
-    .setDescription('ユーザーに警告を出します')
+    .setDescription('メンバーに警告します')
     .addUserOption(option =>
       option
         .setName('user')
-        .setDescription('警告するユーザー')
+        .setDescription('対象ユーザー')
         .setRequired(true)
     )
     .addStringOption(option =>
       option
         .setName('reason')
-        .setDescription('警告理由')
-        .setMaxLength(500)
+        .setDescription('理由')
         .setRequired(true)
     )
     .setDefaultMemberPermissions(
@@ -25,55 +32,45 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    if (!interaction.member.permissions.has(
-      PermissionFlagsBits.ModerateMembers
-    )) {
+    if (!isModerator(interaction.member)) {
       return interaction.reply({
-        content: '❌ 警告権限がありません。',
+        content:
+          '❌ モデレーター権限が必要です。',
         ephemeral: true,
       });
     }
 
-    const user = interaction.options.getUser('user');
+    const user =
+      interaction.options.getUser('user');
 
     const reason =
       interaction.options.getString('reason');
 
-    await interaction.reply(
-      `⚠️ **${user.tag}** に警告を出しました。\n` +
-      `理由: ${reason}`
-    );
+    await interaction.reply({
+      content:
+        `⚠️ ${user.tag} に警告しました。`,
+    });
 
-    const channelId = process.env.MOD_LOG_CHANNEL_ID;
-
-    if (!channelId) return;
-
-    const channel =
-      interaction.guild.channels.cache.get(channelId);
-
-    if (!channel) return;
-
-    await channel.send({
-      embeds: [{
-        title: '⚠️ 警告',
-        color: 0xfee75c,
+    await sendAuditLog(
+      interaction.guild,
+      {
+        title: '⚠️ Warn',
+        color: 0xffff00,
         fields: [
           {
-            name: '対象ユーザー',
-            value: `${user.tag}\n${user.id}`,
+            name: '対象',
+            value: `${user.tag}`,
           },
           {
             name: '実行者',
-            value:
-              `${interaction.user.tag}\n${interaction.user.id}`,
+            value: `${interaction.user.tag}`,
           },
           {
             name: '理由',
             value: reason,
           },
         ],
-        timestamp: new Date().toISOString(),
-      }],
-    }).catch(console.error);
+      }
+    );
   },
 };

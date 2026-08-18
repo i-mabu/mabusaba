@@ -3,14 +3,22 @@ const {
   PermissionFlagsBits,
 } = require('discord.js');
 
+const {
+  canManageMessages,
+} = require('../utils/permissions');
+
+const {
+  sendAuditLog,
+} = require('../utils/logger');
+
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('clear')
-    .setDescription('指定した数のメッセージを削除します')
+    .setDescription('メッセージを削除します')
     .addIntegerOption(option =>
       option
         .setName('amount')
-        .setDescription('削除するメッセージ数')
+        .setDescription('削除する件数')
         .setMinValue(1)
         .setMaxValue(100)
         .setRequired(true)
@@ -20,68 +28,55 @@ module.exports = {
     ),
 
   async execute(interaction) {
-    const amount = interaction.options.getInteger('amount');
-
-    if (!interaction.member.permissions.has(
-      PermissionFlagsBits.ManageMessages
-    )) {
+    if (
+      !canManageMessages(
+        interaction.member
+      )
+    ) {
       return interaction.reply({
-        content: '❌ このコマンドを使用する権限がありません。',
+        content:
+          '❌ メッセージ管理権限が必要です。',
         ephemeral: true,
       });
     }
 
-    await interaction.deferReply({
-      ephemeral: true,
-    });
+    const amount =
+      interaction.options.getInteger(
+        'amount'
+      );
 
-    try {
-      const deleted = await interaction.channel.bulkDelete(
+    const deleted =
+      await interaction.channel.bulkDelete(
         amount,
         true
       );
 
-      await interaction.editReply(
-        `🧹 **${deleted.size}件**のメッセージを削除しました。`
-      );
+    await interaction.reply({
+      content:
+        `🧹 ${deleted.size}件削除しました。`,
+        ephemeral: true,
+    });
 
-      // 監査ログ
-      const logChannelId = process.env.MOD_LOG_CHANNEL_ID;
-
-      if (logChannelId) {
-        const logChannel =
-          interaction.guild.channels.cache.get(logChannelId);
-
-        if (logChannel) {
-          await logChannel.send({
-            embeds: [{
-              title: '🧹 メッセージ削除',
-              fields: [
-                {
-                  name: '実行者',
-                  value: `${interaction.user} (${interaction.user.id})`,
-                },
-                {
-                  name: 'チャンネル',
-                  value: `${interaction.channel}`,
-                },
-                {
-                  name: '削除数',
-                  value: `${deleted.size}件`,
-                },
-              ],
-              color: 0xfee75c,
-              timestamp: new Date().toISOString(),
-            }],
-          });
-        }
+    await sendAuditLog(
+      interaction.guild,
+      {
+        title: '🧹 メッセージ削除',
+        color: 0xffa500,
+        fields: [
+          {
+            name: '実行者',
+            value: `${interaction.user}`,
+          },
+          {
+            name: 'チャンネル',
+            value: `${interaction.channel}`,
+          },
+          {
+            name: '件数',
+            value: `${deleted.size}件`,
+          },
+        ],
       }
-    } catch (error) {
-      console.error('clear error:', error);
-
-      await interaction.editReply(
-        '❌ メッセージの削除に失敗しました。'
-      );
-    }
+    );
   },
 };

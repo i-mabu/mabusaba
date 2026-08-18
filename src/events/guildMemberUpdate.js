@@ -1,95 +1,86 @@
 const {
   Events,
-  EmbedBuilder,
 } = require('discord.js');
+
+const {
+  sendAuditLog,
+} = require('../utils/logger');
 
 module.exports = {
   name: Events.GuildMemberUpdate,
-  once: false,
 
-  async execute(oldMember, newMember) {
-    const {
-      LOG_CHANNEL_ID,
-    } = process.env;
+  async execute(
+    oldMember,
+    newMember
+  ) {
+    const oldRoles =
+      new Set(oldMember.roles.cache.keys());
 
-    if (!LOG_CHANNEL_ID) return;
+    const newRoles =
+      new Set(newMember.roles.cache.keys());
 
-    const logChannel = newMember.guild.channels.cache.get(
-      LOG_CHANNEL_ID
+    const added = [
+      ...newRoles,
+    ].filter(id =>
+      !oldRoles.has(id)
     );
 
-    if (!logChannel) return;
-
-    // ==============================
-    // ロール追加
-    // ==============================
-
-    const addedRoles = newMember.roles.cache.filter(
-      role => !oldMember.roles.cache.has(role.id)
+    const removed = [
+      ...oldRoles,
+    ].filter(id =>
+      !newRoles.has(id)
     );
 
-    for (const role of addedRoles.values()) {
-      if (role.id === newMember.guild.id) continue;
-
-      const embed = new EmbedBuilder()
-        .setTitle('➕ ロール追加')
-        .setDescription(
-          `${newMember.user} にロールが追加されました。`
-        )
-        .addFields(
-          {
-            name: 'ユーザー',
-            value: newMember.user.tag,
-            inline: true,
-          },
-          {
-            name: 'ロール',
-            value: `${role}`,
-            inline: true,
-          }
-        )
-        .setColor(0x57f287)
-        .setTimestamp();
-
-      await logChannel.send({
-        embeds: [embed],
-      }).catch(console.error);
+    if (
+      added.length === 0 &&
+      removed.length === 0
+    ) {
+      return;
     }
 
-    // ==============================
-    // ロール削除
-    // ==============================
+    const changes = [];
 
-    const removedRoles = oldMember.roles.cache.filter(
-      role => !newMember.roles.cache.has(role.id)
-    );
+    for (const id of added) {
+      const role =
+        newMember.guild.roles.cache.get(id);
 
-    for (const role of removedRoles.values()) {
-      if (role.id === newMember.guild.id) continue;
+      if (role) {
+        changes.push(
+          `➕ ${role.name}`
+        );
+      }
+    }
 
-      const embed = new EmbedBuilder()
-        .setTitle('➖ ロール削除')
-        .setDescription(
-          `${newMember.user} からロールが削除されました。`
-        )
-        .addFields(
+    for (const id of removed) {
+      const role =
+        newMember.guild.roles.cache.get(id);
+
+      if (role) {
+        changes.push(
+          `➖ ${role.name}`
+        );
+      }
+    }
+
+    await sendAuditLog(
+      newMember.guild,
+      {
+        title: '🎭 ロール変更',
+        color: 0x9b59b6,
+        fields: [
           {
             name: 'ユーザー',
-            value: newMember.user.tag,
-            inline: true,
+            value:
+              `${newMember.user.tag}`,
           },
           {
-            name: 'ロール',
-            value: `${role.name}`,
-            inline: true,
-          }
-        )
-        .setColor(0xed4245)
-        .setTimestamp();
-
-      await logChannel.send({
-        embeds: [embed],
-      }).catch(console.error);
-    }
+            name: '変更',
+            value:
+              changes.join('\n') ||
+              '変更なし',
+          },
+        ],
+      }
+    );
   },
 };
