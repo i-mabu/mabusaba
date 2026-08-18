@@ -1,7 +1,11 @@
 const {
   SlashCommandBuilder,
   PermissionFlagsBits,
-  EmbedBuilder
+  EmbedBuilder,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
+  ActionRowBuilder
 } = require('discord.js');
 
 const {
@@ -15,9 +19,7 @@ const {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('fixed-message')
-    .setDescription(
-      '固定メッセージを管理します'
-    )
+    .setDescription('固定メッセージを管理します')
 
     .setDefaultMemberPermissions(
       PermissionFlagsBits.Administrator
@@ -28,46 +30,12 @@ module.exports = {
      * CREATE
      * ==========================
      */
-    .addSubcommand(
-      subcommand =>
-        subcommand
-          .setName('create')
-          .setDescription(
-            'Embed固定メッセージを作成します'
-          )
-
-          .addStringOption(
-            option =>
-              option
-                .setName('title')
-                .setDescription(
-                  'Embedのタイトル'
-                )
-                .setRequired(true)
-                .setMaxLength(256)
-          )
-
-          .addStringOption(
-            option =>
-              option
-                .setName('description')
-                .setDescription(
-                  '本文。改行対応'
-                )
-                .setRequired(true)
-                .setMaxLength(4096)
-          )
-
-          .addStringOption(
-            option =>
-              option
-                .setName('color')
-                .setDescription(
-                  '色。例: 5865F2'
-                )
-                .setRequired(false)
-                .setMaxLength(6)
-          )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('create')
+        .setDescription(
+          '固定メッセージを作成します'
+        )
     )
 
     /*
@@ -75,46 +43,12 @@ module.exports = {
      * EDIT
      * ==========================
      */
-    .addSubcommand(
-      subcommand =>
-        subcommand
-          .setName('edit')
-          .setDescription(
-            'Embed固定メッセージを編集します'
-          )
-
-          .addStringOption(
-            option =>
-              option
-                .setName('title')
-                .setDescription(
-                  'Embedのタイトル'
-                )
-                .setRequired(true)
-                .setMaxLength(256)
-          )
-
-          .addStringOption(
-            option =>
-              option
-                .setName('description')
-                .setDescription(
-                  '本文。改行対応'
-                )
-                .setRequired(true)
-                .setMaxLength(4096)
-          )
-
-          .addStringOption(
-            option =>
-              option
-                .setName('color')
-                .setDescription(
-                  '色。例: 5865F2'
-                )
-                .setRequired(false)
-                .setMaxLength(6)
-          )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('edit')
+        .setDescription(
+          '固定メッセージを編集します'
+        )
     )
 
     /*
@@ -122,13 +56,12 @@ module.exports = {
      * DELETE
      * ==========================
      */
-    .addSubcommand(
-      subcommand =>
-        subcommand
-          .setName('delete')
-          .setDescription(
-            '固定メッセージを削除します'
-          )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('delete')
+        .setDescription(
+          '固定メッセージを削除します'
+        )
     )
 
     /*
@@ -136,21 +69,18 @@ module.exports = {
      * SHOW
      * ==========================
      */
-    .addSubcommand(
-      subcommand =>
-        subcommand
-          .setName('show')
-          .setDescription(
-            '固定メッセージを確認します'
-          )
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('show')
+        .setDescription(
+          '固定メッセージを確認します'
+        )
     ),
 
-  async execute(
-    interaction
-  ) {
+  async execute(interaction) {
     /*
      * ==========================
-     * 権限チェック
+     * 権限確認
      * ==========================
      */
     if (
@@ -167,12 +97,10 @@ module.exports = {
       return;
     }
 
-    if (
-      !interaction.guild
-    ) {
+    if (!interaction.guild) {
       await interaction.reply({
         content:
-          '❌ このコマンドはサーバー内でのみ使用できます。',
+          '❌ サーバー内でのみ使用できます。',
         ephemeral: true
       });
 
@@ -182,110 +110,373 @@ module.exports = {
     const subcommand =
       interaction.options.getSubcommand();
 
-    if (
-      subcommand === 'create'
-    ) {
-      return createCommand(
+    /*
+     * ==========================
+     * CREATE
+     * ==========================
+     */
+    if (subcommand === 'create') {
+      return showCreateModal(interaction);
+    }
+
+    /*
+     * ==========================
+     * EDIT
+     * ==========================
+     */
+    if (subcommand === 'edit') {
+      return showEditModal(interaction);
+    }
+
+    /*
+     * ==========================
+     * DELETE
+     * ==========================
+     */
+    if (subcommand === 'delete') {
+      return deleteFixedMessageCommand(
         interaction
       );
     }
 
-    if (
-      subcommand === 'edit'
-    ) {
-      return editCommand(
+    /*
+     * ==========================
+     * SHOW
+     * ==========================
+     */
+    if (subcommand === 'show') {
+      return showFixedMessageCommand(
         interaction
       );
+    }
+  },
+
+  /*
+   * index.jsから呼び出す
+   * Modal / Buttonなどの処理
+   */
+  async handleModal(interaction) {
+    if (!interaction.isModalSubmit()) {
+      return false;
     }
 
+    /*
+     * CREATE
+     */
     if (
-      subcommand === 'delete'
+      interaction.customId ===
+      'fixed-message-create'
     ) {
-      return deleteCommand(
+      await handleCreateModal(
         interaction
       );
+
+      return true;
     }
 
+    /*
+     * EDIT
+     */
     if (
-      subcommand === 'show'
+      interaction.customId ===
+      'fixed-message-edit'
     ) {
-      return showCommand(
+      await handleEditModal(
         interaction
       );
+
+      return true;
     }
+
+    return false;
   }
 };
 
 /*
  * ==================================================
- * Embed生成
+ * CREATE MODAL
  * ==================================================
  */
-function createEmbed(
+async function showCreateModal(
   interaction
 ) {
-  const title =
-    interaction.options.getString(
-      'title'
+  const existing =
+    getFixedMessage(
+      interaction.guildId
     );
 
-  const description =
-    interaction.options.getString(
-      'description'
-    );
+  if (existing) {
+    await interaction.reply({
+      content:
+        '❌ このサーバーには既に固定メッセージがあります。\n' +
+        '`/fixed-message edit` で編集できます。',
+      ephemeral: true
+    });
 
-  const colorInput =
-    interaction.options.getString(
-      'color'
-    );
-
-  /*
-   * デフォルト色
-   */
-  let color = 0x5865F2;
-
-  if (colorInput) {
-    const normalized =
-      colorInput
-        .replace(
-          /^#/,
-          ''
-        )
-        .trim();
-
-    /*
-     * 6桁HEXのみ許可
-     */
-    if (
-      !/^[0-9a-fA-F]{6}$/.test(
-        normalized
-      )
-    ) {
-      throw new Error(
-        '色は6桁のHEX形式で指定してください。例: 5865F2'
-      );
-    }
-
-    color =
-      parseInt(
-        normalized,
-        16
-      );
+    return;
   }
 
-  return {
-    title,
-    description,
-    color
-  };
+  const modal =
+    new ModalBuilder()
+      .setCustomId(
+        'fixed-message-create'
+      )
+      .setTitle(
+        '📌 固定メッセージを作成'
+      );
+
+  /*
+   * タイトル
+   */
+  const titleInput =
+    new TextInputBuilder()
+      .setCustomId(
+        'fixed-title'
+      )
+      .setLabel(
+        'タイトル'
+      )
+      .setStyle(
+        TextInputStyle.Short
+      )
+      .setPlaceholder(
+        '例：📢 まぶ鯖へようこそ！'
+      )
+      .setMaxLength(256)
+      .setRequired(true);
+
+  /*
+   * 本文
+   *
+   * Paragraphなので
+   * Enterによる複数行入力が可能
+   */
+  const descriptionInput =
+    new TextInputBuilder()
+      .setCustomId(
+        'fixed-description'
+      )
+      .setLabel(
+        '本文'
+      )
+      .setStyle(
+        TextInputStyle.Paragraph
+      )
+      .setPlaceholder(
+        'ここに本文を入力してください。\n\nEnterで改行できます。'
+      )
+      .setMaxLength(4096)
+      .setRequired(true);
+
+  /*
+   * 色
+   */
+  const colorInput =
+    new TextInputBuilder()
+      .setCustomId(
+        'fixed-color'
+      )
+      .setLabel(
+        '色（HEX）'
+      )
+      .setStyle(
+        TextInputStyle.Short
+      )
+      .setPlaceholder(
+        '5865F2'
+      )
+      .setValue(
+        '5865F2'
+      )
+      .setMaxLength(6)
+      .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder()
+      .addComponents(
+        titleInput
+      ),
+
+    new ActionRowBuilder()
+      .addComponents(
+        descriptionInput
+      ),
+
+    new ActionRowBuilder()
+      .addComponents(
+        colorInput
+      )
+  );
+
+  await interaction.showModal(
+    modal
+  );
 }
 
 /*
  * ==================================================
- * CREATE
+ * EDIT MODAL
  * ==================================================
  */
-async function createCommand(
+async function showEditModal(
+  interaction
+) {
+  const fixed =
+    getFixedMessage(
+      interaction.guildId
+    );
+
+  if (!fixed) {
+    await interaction.reply({
+      content:
+        '❌ 固定メッセージが登録されていません。\n' +
+        '`/fixed-message create` で作成してください。',
+      ephemeral: true
+    });
+
+    return;
+  }
+
+  const storedEmbed =
+    getStoredEmbed(
+      fixed
+    );
+
+  const title =
+    storedEmbed?.title ||
+    fixed.embed_title ||
+    '';
+
+  const description =
+    storedEmbed?.description ||
+    fixed.embed_description ||
+    '';
+
+  let color =
+    storedEmbed?.color ??
+    fixed.embed_color ??
+    0x5865F2;
+
+  /*
+   * 数値の場合HEXに変換
+   */
+  if (
+    typeof color === 'number'
+  ) {
+    color =
+      color
+        .toString(16)
+        .padStart(6, '0')
+        .toUpperCase();
+  }
+
+  /*
+   * #が付いている場合除去
+   */
+  color =
+    String(color)
+      .replace(
+        /^#/,
+        ''
+      );
+
+  const modal =
+    new ModalBuilder()
+      .setCustomId(
+        'fixed-message-edit'
+      )
+      .setTitle(
+        '📌 固定メッセージを編集'
+      );
+
+  /*
+   * タイトル
+   */
+  const titleInput =
+    new TextInputBuilder()
+      .setCustomId(
+        'fixed-title'
+      )
+      .setLabel(
+        'タイトル'
+      )
+      .setStyle(
+        TextInputStyle.Short
+      )
+      .setMaxLength(256)
+      .setValue(
+        title.slice(0, 256)
+      )
+      .setRequired(true);
+
+  /*
+   * 本文
+   */
+  const descriptionInput =
+    new TextInputBuilder()
+      .setCustomId(
+        'fixed-description'
+      )
+      .setLabel(
+        '本文'
+      )
+      .setStyle(
+        TextInputStyle.Paragraph
+      )
+      .setMaxLength(4096)
+      .setValue(
+        description.slice(0, 4096)
+      )
+      .setRequired(true);
+
+  /*
+   * 色
+   */
+  const colorInput =
+    new TextInputBuilder()
+      .setCustomId(
+        'fixed-color'
+      )
+      .setLabel(
+        '色（HEX）'
+      )
+      .setStyle(
+        TextInputStyle.Short
+      )
+      .setMaxLength(6)
+      .setValue(
+        color.slice(0, 6)
+      )
+      .setRequired(true);
+
+  modal.addComponents(
+    new ActionRowBuilder()
+      .addComponents(
+        titleInput
+      ),
+
+    new ActionRowBuilder()
+      .addComponents(
+        descriptionInput
+      ),
+
+    new ActionRowBuilder()
+      .addComponents(
+        colorInput
+      )
+  );
+
+  await interaction.showModal(
+    modal
+  );
+}
+
+/*
+ * ==================================================
+ * CREATE処理
+ * ==================================================
+ */
+async function handleCreateModal(
   interaction
 ) {
   const guildId =
@@ -299,34 +490,81 @@ async function createCommand(
   if (existing) {
     await interaction.reply({
       content:
-        '❌ このサーバーには既に固定メッセージがあります。\n' +
-        '`/fixed-message show` で確認してください。',
+        '❌ このサーバーには既に固定メッセージがあります。',
       ephemeral: true
     });
 
     return;
   }
 
+  const title =
+    interaction.fields.getTextInputValue(
+      'fixed-title'
+    );
+
+  const description =
+    interaction.fields.getTextInputValue(
+      'fixed-description'
+    );
+
+  let colorInput =
+    interaction.fields.getTextInputValue(
+      'fixed-color'
+    );
+
+  colorInput =
+    colorInput
+      .replace(
+        /^#/,
+        ''
+      )
+      .trim();
+
+  /*
+   * HEXチェック
+   */
+  if (
+    !/^[0-9a-fA-F]{6}$/.test(
+      colorInput
+    )
+  ) {
+    await interaction.reply({
+      content:
+        '❌ 色は6桁のHEX形式で入力してください。\n' +
+        '例：`5865F2`',
+      ephemeral: true
+    });
+
+    return;
+  }
+
+  const color =
+    parseInt(
+      colorInput,
+      16
+    );
+
   try {
-    const embedData =
-      createEmbed(
-        interaction
-      );
+    const embedData = {
+      title,
+      description,
+      color
+    };
 
     const embed =
       new EmbedBuilder()
         .setTitle(
-          embedData.title
+          title
         )
         .setDescription(
-          embedData.description
+          description
         )
         .setColor(
-          embedData.color
+          color
         );
 
     /*
-     * 現在のチャンネルへ投稿
+     * 現在のチャンネルに送信
      */
     const message =
       await interaction.channel.send({
@@ -335,6 +573,9 @@ async function createCommand(
         ]
       });
 
+    /*
+     * SQLite保存
+     */
     createFixedMessage({
       guildId,
 
@@ -354,42 +595,20 @@ async function createCommand(
     });
 
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle(
-            '✅ 固定メッセージを作成しました'
-          )
-          .addFields(
-            {
-              name:
-                'チャンネル',
-              value:
-                `<#${interaction.channel.id}>`,
-              inline: true
-            },
-            {
-              name:
-                'メッセージID',
-              value:
-                message.id,
-              inline: true
-            }
-          )
-          .setColor(
-            0x57F287
-          )
-      ],
+      content:
+        '✅ 固定メッセージを作成しました。',
       ephemeral: true
     });
+
   } catch (error) {
     console.error(
-      '❌ Fixed message create:',
+      'Fixed message create error:',
       error
     );
 
     await interaction.reply({
       content:
-        `❌ 作成に失敗しました。\n${error.message}`,
+        '❌ 固定メッセージの作成に失敗しました。',
       ephemeral: true
     });
   }
@@ -397,10 +616,10 @@ async function createCommand(
 
 /*
  * ==================================================
- * EDIT
+ * EDIT処理
  * ==================================================
  */
-async function editCommand(
+async function handleEditModal(
   interaction
 ) {
   const guildId =
@@ -421,24 +640,51 @@ async function editCommand(
     return;
   }
 
+  const title =
+    interaction.fields.getTextInputValue(
+      'fixed-title'
+    );
+
+  const description =
+    interaction.fields.getTextInputValue(
+      'fixed-description'
+    );
+
+  let colorInput =
+    interaction.fields.getTextInputValue(
+      'fixed-color'
+    );
+
+  colorInput =
+    colorInput
+      .replace(
+        /^#/,
+        ''
+      )
+      .trim();
+
+  if (
+    !/^[0-9a-fA-F]{6}$/.test(
+      colorInput
+    )
+  ) {
+    await interaction.reply({
+      content:
+        '❌ 色は6桁のHEX形式で入力してください。\n' +
+        '例：`5865F2`',
+      ephemeral: true
+    });
+
+    return;
+  }
+
+  const color =
+    parseInt(
+      colorInput,
+      16
+    );
+
   try {
-    const embedData =
-      createEmbed(
-        interaction
-      );
-
-    const embed =
-      new EmbedBuilder()
-        .setTitle(
-          embedData.title
-        )
-        .setDescription(
-          embedData.description
-        )
-        .setColor(
-          embedData.color
-        );
-
     const channel =
       await interaction.guild.channels.fetch(
         fixed.channel_id
@@ -446,7 +692,7 @@ async function editCommand(
 
     if (!channel) {
       throw new Error(
-        '固定メッセージのチャンネルが見つかりません。'
+        'チャンネルが見つかりません。'
       );
     }
 
@@ -455,6 +701,27 @@ async function editCommand(
         fixed.message_id
       );
 
+    const embedData = {
+      title,
+      description,
+      color
+    };
+
+    const embed =
+      new EmbedBuilder()
+        .setTitle(
+          title
+        )
+        .setDescription(
+          description
+        )
+        .setColor(
+          color
+        );
+
+    /*
+     * Discord上の既存メッセージを編集
+     */
     await message.edit({
       content: null,
       embeds: [
@@ -462,6 +729,9 @@ async function editCommand(
       ]
     });
 
+    /*
+     * SQLite更新
+     */
     updateFixedMessage({
       guildId,
 
@@ -481,33 +751,21 @@ async function editCommand(
     });
 
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle(
-            '✅ 固定メッセージを更新しました'
-          )
-          .addFields({
-            name:
-              'チャンネル',
-            value:
-              `<#${channel.id}>`
-          })
-          .setColor(
-            0x57F287
-          )
-      ],
+      content:
+        '✅ 固定メッセージを更新しました。',
       ephemeral: true
     });
+
   } catch (error) {
     console.error(
-      '❌ Fixed message edit:',
+      'Fixed message edit error:',
       error
     );
 
     await interaction.reply({
       content:
         '❌ 固定メッセージを編集できませんでした。\n' +
-        'メッセージが削除されている可能性があります。',
+        'メッセージが削除されていないか確認してください。',
       ephemeral: true
     });
   }
@@ -518,7 +776,7 @@ async function editCommand(
  * DELETE
  * ==================================================
  */
-async function deleteCommand(
+async function deleteFixedMessageCommand(
   interaction
 ) {
   const guildId =
@@ -553,9 +811,9 @@ async function deleteCommand(
           );
 
         await message.delete();
-      } catch (error) {
+      } catch {
         console.log(
-          '固定メッセージは既に削除済みです。'
+          '固定メッセージは既に削除されています。'
         );
       }
     }
@@ -565,26 +823,20 @@ async function deleteCommand(
     );
 
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle(
-            '🗑️ 固定メッセージを削除しました'
-          )
-          .setColor(
-            0xED4245
-          )
-      ],
+      content:
+        '🗑️ 固定メッセージを削除しました。',
       ephemeral: true
     });
+
   } catch (error) {
     console.error(
-      '❌ Fixed message delete:',
+      'Fixed message delete error:',
       error
     );
 
     await interaction.reply({
       content:
-        '❌ 削除に失敗しました。',
+        '❌ 固定メッセージの削除に失敗しました。',
       ephemeral: true
     });
   }
@@ -595,36 +847,28 @@ async function deleteCommand(
  * SHOW
  * ==================================================
  */
-async function showCommand(
+async function showFixedMessageCommand(
   interaction
 ) {
-  const guildId =
-    interaction.guildId;
-
   const fixed =
     getFixedMessage(
-      guildId
+      interaction.guildId
     );
 
   if (!fixed) {
     await interaction.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setTitle(
-            '📌 固定メッセージ'
-          )
-          .setDescription(
-            '設定されていません。'
-          )
-          .setColor(
-            0x95A5A6
-          )
-      ],
+      content:
+        '📌 固定メッセージは設定されていません。',
       ephemeral: true
     });
 
     return;
   }
+
+  const storedEmbed =
+    getStoredEmbed(
+      fixed
+    );
 
   let status =
     '🟢 正常';
@@ -648,71 +892,60 @@ async function showCommand(
       '🟠 メッセージなし';
   }
 
-  const embed =
-    getStoredEmbed(
-      fixed
-    );
-
   const updated =
     Math.floor(
       fixed.updated_at
     );
 
-  const preview =
-    embed?.description ||
-    '本文なし';
+  const infoEmbed =
+    new EmbedBuilder()
+      .setTitle(
+        '📌 固定メッセージ情報'
+      )
+      .addFields(
+        {
+          name: '状態',
+          value: status
+        },
+        {
+          name: 'チャンネル',
+          value:
+            `<#${fixed.channel_id}>`
+        },
+        {
+          name: 'メッセージID',
+          value:
+            fixed.message_id
+        },
+        {
+          name: 'タイトル',
+          value:
+            storedEmbed?.title ||
+            fixed.embed_title ||
+            'なし'
+        },
+        {
+          name: '本文',
+          value:
+            (
+              storedEmbed?.description ||
+              fixed.embed_description ||
+              'なし'
+            ).slice(0, 1024)
+        },
+        {
+          name: '最終更新',
+          value:
+            `<t:${updated}:F>`
+        }
+      )
+      .setColor(
+        0x5865F2
+      );
 
   await interaction.reply({
     embeds: [
-      new EmbedBuilder()
-        .setTitle(
-          '📌 固定メッセージ情報'
-        )
-        .addFields(
-          {
-            name:
-              '状態',
-            value:
-              status
-          },
-          {
-            name:
-              'チャンネル',
-            value:
-              `<#${fixed.channel_id}>`
-          },
-          {
-            name:
-              'メッセージID',
-            value:
-              fixed.message_id
-          },
-          {
-            name:
-              'タイトル',
-            value:
-              embed?.title ||
-              'なし'
-          },
-          {
-            name:
-              '本文',
-            value:
-              preview.slice(
-                0,
-                1024
-              )
-          },
-          {
-            name:
-              '最終更新',
-            value:
-              `<t:${updated}:F>`
-          }
-        )
-        .setColor(
-          0x5865F2
-        )
+      infoEmbed
     ],
     ephemeral: true
   });

@@ -141,45 +141,105 @@ for (const file of eventFiles) {
 client.on(
   'interactionCreate',
   async interaction => {
-    if (!interaction.isChatInputCommand()) {
-      return;
-    }
 
-    const command =
-      client.commands.get(
-        interaction.commandName
-      );
+    /*
+     * ==========================
+     * Slash Command
+     * ==========================
+     */
+    if (
+      interaction.isChatInputCommand()
+    ) {
+      const command =
+        client.commands.get(
+          interaction.commandName
+        );
 
-    if (!command) {
-      return;
-    }
-
-    try {
-      await command.execute(
-        interaction
-      );
-    } catch (error) {
-      console.error(
-        `/${interaction.commandName} 実行エラー:`,
-        error
-      );
-
-      const message =
-        '❌ コマンドの実行中にエラーが発生しました。';
-
-      if (
-        interaction.replied ||
-        interaction.deferred
-      ) {
-        await interaction.editReply({
-          content: message,
-        }).catch(() => {});
-      } else {
-        await interaction.reply({
-          content: message,
-          ephemeral: true,
-        }).catch(() => {});
+      if (!command) {
+        return;
       }
+
+      try {
+        await command.execute(
+          interaction
+        );
+      } catch (error) {
+        console.error(
+          error
+        );
+
+        if (
+          interaction.replied ||
+          interaction.deferred
+        ) {
+          await interaction.followUp({
+            content:
+              '❌ コマンド実行中にエラーが発生しました。',
+            ephemeral: true
+          });
+        } else {
+          await interaction.reply({
+            content:
+              '❌ コマンド実行中にエラーが発生しました。',
+            ephemeral: true
+          });
+        }
+      }
+
+      return;
+    }
+
+    /*
+     * ==========================
+     * Modal
+     * ==========================
+     */
+    if (
+      interaction.isModalSubmit()
+    ) {
+      /*
+       * fixed-messageのModal
+       */
+      if (
+        interaction.customId ===
+          'fixed-message-create' ||
+        interaction.customId ===
+          'fixed-message-edit'
+      ) {
+        const command =
+          client.commands.get(
+            'fixed-message'
+          );
+
+        if (
+          command &&
+          command.handleModal
+        ) {
+          try {
+            await command.handleModal(
+              interaction
+            );
+          } catch (error) {
+            console.error(
+              'Modal error:',
+              error
+            );
+
+            if (
+              !interaction.replied &&
+              !interaction.deferred
+            ) {
+              await interaction.reply({
+                content:
+                  '❌ Modal処理中にエラーが発生しました。',
+                ephemeral: true
+              });
+            }
+          }
+        }
+      }
+
+      return;
     }
   }
 );
