@@ -1,3 +1,5 @@
+require('./utils/database').migrateDatabase();
+
 require('dotenv').config();
 
 const {

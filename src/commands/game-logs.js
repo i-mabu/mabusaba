@@ -65,8 +65,6 @@ module.exports = {
           },
           {
             name:
-<<<<<<< Updated upstream
-=======
               '🃏 ブラックジャック',
             value:
               'blackjack'
@@ -91,7 +89,6 @@ module.exports = {
           },
           {
             name:
->>>>>>> Stashed changes
               '⚙️ システム',
             value:
               'system'

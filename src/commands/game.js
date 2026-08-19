@@ -872,12 +872,8 @@ function createMenuEmbed(
         '✊ じゃんけん　+15 / -5\n' +
         '🎯 HIGH & LOW　+20 / -5\n' +
         '🎰 スロット　+15 / -5\n' +
-<<<<<<< Updated upstream
-        '🎰 JACKPOT　+50'
-=======
         '🎰 JACKPOT　+50\n\n' +
         '✨ 拡張ゲーム: `/game-plus`（Blackjack / Roulette / Quiz / 数字当て）'
->>>>>>> Stashed changes
     })
     .setColor(
       0x5865f2

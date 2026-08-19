@@ -72,3 +72,39 @@ AUTO_ROLE_ID=YOUR_ROLE_ID
 - SQLite DBは実行時に自動作成されます。
 - `src/data/*.db` はGit管理対象外です。
 - Botには必要な権限（Moderate Members / Ban Members / Kick Members / View Audit Log / Embed Links等）を付与してください。
+
+## DB自動移行・バックアップ
+
+v1.2.2では起動時にSQLiteの整合性を確認し、旧版の `games.db` に不足している列・インデックスを追加する安全な加算型マイグレーションを実行します。既存行は削除・上書きしません。
+
+### バックアップ
+
+デフォルトで起動前の既存DBを `src/data/backups/YYYYMMDDTHHMMSSZ/` にバックアップします。保持数は `DB_BACKUP_RETENTION`（既定10世代）で設定できます。
+
+### 手動確認
+
+```bash
+npm run db:check
+```
+
+### 手動バックアップ＋移行
+
+```bash
+npm run db:backup
+```
+
+### 互換性について
+
+- v1.1.x以前の `games.db` は既存の `users` / `game_logs` データを維持して利用します。
+- 不足列がある場合のみ `ALTER TABLE ... ADD COLUMN` で補完します。
+- 主キー構造そのものが壊れているDBは自動変換せず停止し、バックアップからの復元を促します。
+- `moderation.db` はv1.2.0以降のCase・監査ログDBとして自動生成/更新されます。
+
+
+## 旧版DB互換性確認
+
+v1.2.2では起動前に既存DBをバックアップし、SQLite整合性を確認したうえで加算型マイグレーションを行います。
+`games.db` の既存 `users` / `game_logs` / `fixed_messages` / `welcome_messages` の行数を移行前後で比較し、既存データが減少した場合は起動を停止します。
+主キーなど自動変更できない構造差は安全側に倒して停止します。
+
+バックアップは `src/data/backups/` に世代別で保存され、既定で10世代保持します。WAL利用中はチェックポイントを試行し、失敗時には `.db` と `.db-wal` / `.db-shm` をセットで保存します。

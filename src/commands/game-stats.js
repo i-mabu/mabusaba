@@ -86,13 +86,10 @@ module.exports = {
 
 function getGameName(game) {
   const names = {
-<<<<<<< Updated upstream
-=======
     blackjack: '🃏 ブラックジャック',
     roulette: '🎯 ルーレット',
     quiz: '❓ クイズ',
     numberguess: '🔢 数字当て',
->>>>>>> Stashed changes
     dice:
       '🎲 サイコロ',
 
