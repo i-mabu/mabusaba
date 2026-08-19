@@ -7,6 +7,8 @@ const {
 const fs = require('fs');
 const path = require('path');
 
+const { getAuditLogChannelId } = require('../utils/auditLog');
+
 const {
   isAdmin,
   isModerator,
@@ -132,22 +134,27 @@ module.exports = {
         });
       }
 
+      const auditLogChannelId = getAuditLogChannelId();
       const envs = [
         ['WELCOME_CHANNEL_ID', '👋 Welcome'],
-        ['LOG_CHANNEL_ID', '📝 Log'],
-        ['MOD_LOG_CHANNEL_ID', '🛡️ Mod Log'],
         ['AUTO_ROLE_ID', '🎭 Auto Role'],
       ];
 
       for (const [env, label] of envs) {
         results.push({
           name: label,
-          value: process.env[env]
-            ? '✅ 設定済み'
-            : '❌ 未設定',
+          value: process.env[env] ? '✅ 設定済み' : '❌ 未設定',
           inline: true,
         });
       }
+
+      results.push({
+        name: '📜 監査ログ',
+        value: auditLogChannelId
+          ? `✅ 設定済み\n\`${auditLogChannelId}\``
+          : '❌ 未設定\n`AUDIT_LOG_CHANNEL_ID` / `MOD_LOG_CHANNEL_ID` / `LOG_CHANNEL_ID` のいずれかを設定',
+        inline: false,
+      });
     }
 
     /*

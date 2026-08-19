@@ -61,7 +61,7 @@ DISCORD_TOKEN=YOUR_BOT_TOKEN
 CLIENT_ID=YOUR_APPLICATION_ID
 GUILD_ID=YOUR_TEST_GUILD_ID
 
-AUDIT_LOG_CHANNEL_ID=YOUR_LOG_CHANNEL_ID
+AUDIT_LOG_CHANNEL_ID=123456789012345678
 AUTO_ROLE_ID=YOUR_ROLE_ID
 ```
 
@@ -108,3 +108,18 @@ v1.2.2では起動前に既存DBをバックアップし、SQLite整合性を確
 主キーなど自動変更できない構造差は安全側に倒して停止します。
 
 バックアップは `src/data/backups/` に世代別で保存され、既定で10世代保持します。WAL利用中はチェックポイントを試行し、失敗時には `.db` と `.db-wal` / `.db-shm` をセットで保存します。
+
+
+## 監査ログの設定
+
+`.env` の `AUDIT_LOG_CHANNEL_ID` に、監査ログを送信したいDiscordチャンネルのIDを設定してください。
+
+```env
+AUDIT_LOG_CHANNEL_ID=123456789012345678
+```
+
+旧版との互換性のため `MOD_LOG_CHANNEL_ID` / `LOG_CHANNEL_ID` も利用できます。優先順位は `AUDIT_LOG_CHANNEL_ID` → `MOD_LOG_CHANNEL_ID` → `LOG_CHANNEL_ID` です。
+
+Botには対象チャンネルで **View Channel / Send Messages / Embed Links** 権限が必要です。
+
+起動時にコンソールへ `📜 監査ログ送信先:` が表示されれば設定済みです。`/test` でも監査ログ設定を確認できます。

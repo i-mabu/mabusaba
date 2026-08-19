@@ -1,6 +1,5 @@
-require('./utils/database').migrateDatabase();
-
 require('dotenv').config();
+require('./utils/database').migrateDatabase();
 
 const {
   Client,
@@ -431,6 +430,15 @@ if (!process.env.DISCORD_TOKEN) {
   );
 
   process.exit(1);
+}
+
+const { getAuditLogChannelId } = require('./utils/auditLog');
+
+const auditLogChannelId = getAuditLogChannelId();
+if (auditLogChannelId) {
+  console.log(`📜 監査ログ送信先: ${auditLogChannelId}`);
+} else {
+  console.warn('⚠️ 監査ログ送信先が未設定です。AUDIT_LOG_CHANNEL_ID / MOD_LOG_CHANNEL_ID / LOG_CHANNEL_ID のいずれかを .env に設定してください。');
 }
 
 client.login(
