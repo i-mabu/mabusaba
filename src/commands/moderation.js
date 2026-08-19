@@ -10,7 +10,6 @@ const PAGE_SIZE=5;
 
 module.exports={
   data:new SlashCommandBuilder().setName('moderation').setDescription('処罰履歴・Caseを管理します').setDMPermission(false)
-    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
     .addSubcommand(s=>s.setName('history').setDescription('ユーザーの処罰履歴を表示')
       .addUserOption(o=>o.setName('user').setDescription('対象ユーザー').setRequired(true))
       .addIntegerOption(o=>o.setName('page').setDescription('ページ').setMinValue(1)))
@@ -29,10 +28,16 @@ module.exports={
   async execute(interaction){
     if(!interaction.inGuild()) return interaction.reply({content:'❌ サーバー内で使用してください。',ephemeral:true});
     const sub=interaction.options.getSubcommand();
+    // history / case / stats は一般ユーザーにも公開。
+    // search / note はモデレーター専用。
     if(sub==='history') return history(interaction,1);
     if(sub==='case') return caseDetail(interaction,interaction.options.getInteger('id'));
-    if(sub==='search') return search(interaction);
     if(sub==='stats') return stats(interaction);
+    if(sub==='search' || sub==='note') {
+      if(!interaction.memberPermissions?.has(PermissionFlagsBits.ModerateMembers))
+        return interaction.reply({content:'❌ モデレーター権限が必要です。',ephemeral:true});
+    }
+    if(sub==='search') return search(interaction);
     if(sub==='note'){
       const id=interaction.options.getInteger('id');
       if(!getCase(id,interaction.guild.id)) return interaction.reply({content:'❌ Caseが見つかりません。',ephemeral:true});
@@ -49,12 +54,6 @@ module.exports={
     if(!interaction.customId.startsWith('mod_history:')) return false;
     const [,uid,pageStr]=interaction.customId.split(':');
     const page=Math.max(1,Number(pageStr)||1);
-    if(interaction.user.id!==interaction.message.interaction?.user?.id && interaction.message.interaction?.user?.id!==interaction.user.id){
-      // Discordのmessage.interactionは常に取れるとは限らないため、対象ページ操作は権限で許可
-      if(!interaction.memberPermissions.has(PermissionFlagsBits.ModerateMembers)){
-        await interaction.reply({content:'❌ モデレーター権限が必要です。',ephemeral:true}); return true;
-      }
-    }
     await history(interaction,page,uid,true);
     return true;
   },
@@ -88,13 +87,13 @@ async function history(interaction,page,userIdOverride=null,update=false){
   const lines=cases.length?cases.map(c=>`**#${c.id}** ${icon(c.action)} **${label(c.action)}** — ${escape(c.reason)}\n<t:${c.created_at}:f> ・ ${c.moderator_tag||c.moderator_id} ・ ${statusLabel(c.status)}`).join('\n\n'):'該当する処罰履歴はありません。';
   const embed=new EmbedBuilder().setTitle(`🛡️ ${user.tag} の処罰履歴`).setThumbnail(user.displayAvatarURL()).setColor(0x5865f2)
     .addFields({name:'📊 統計',value:`⚠️ ${counts.WARN||0} ・ 🔇 ${counts.TIMEOUT||0} ・ 👢 ${counts.KICK||0} ・ 🔨 ${counts.BAN||0}\n合計 **${total}件** / 有効 **${stats.active}件**`},
-      {name:'📋 履歴',value:lines.slice(0,1024)})
-    .setFooter({text:`${page} / ${pages} ページ`}).setTimestamp();
+      {name:'📋 履歴',value:lines.slice(0,1024)},{name:'🔎 Case詳細',value:'Case IDを指定して `/moderation case` を使うと、個別の処罰内容を確認できます。'});
+  embed.setFooter({text:`${page} / ${pages} ページ ・ Case IDはサーバー内で共有されます`}).setTimestamp();
   const row=new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`mod_history:${user.id}:${page-1}`).setLabel('前へ').setStyle(ButtonStyle.Secondary).setDisabled(page<=1),
     new ButtonBuilder().setCustomId(`mod_history:${user.id}:${page+1}`).setLabel('次へ').setStyle(ButtonStyle.Secondary).setDisabled(page>=pages),
   );
-  const payload={embeds:[embed],components:[row],ephemeral:true};
+  const payload={embeds:[embed],components:[row]};
   if(update) return interaction.update(payload);
   return interaction.reply(payload);
 }
@@ -102,7 +101,6 @@ async function history(interaction,page,userIdOverride=null,update=false){
 async function caseDetail(interaction,id){
   const c=getCase(id,interaction.guild.id);
   if(!c) return interaction.reply({content:'❌ Caseが見つかりません。',ephemeral:true});
-  const notes=c.notes?.length?c.notes.map(n=>`**#${n.id}** ${n.author_tag} — ${escape(n.content)}\n<t:${n.created_at}:f>`).join('\n\n'):'なし';
   const embed=new EmbedBuilder().setTitle(`🛡️ Case #${c.id}`).setColor(color(c.action)).addFields(
     {name:'👤 対象',value:`${c.user_tag||`<@${c.user_id}>`}\n\`${c.user_id}\``,inline:true},
     {name:'🛡️ 処罰',value:`${icon(c.action)} ${label(c.action)}`,inline:true},
@@ -114,8 +112,7 @@ async function caseDetail(interaction,id){
   if(c.duration) embed.addFields({name:'⏱️ 期間',value:formatDuration(c.duration),inline:true});
   if(c.expires_at) embed.addFields({name:'⏰ 終了予定',value:`<t:${c.expires_at}:F>`,inline:true});
   if(c.channel_id) embed.addFields({name:'📍 チャンネル',value:`<#${c.channel_id}>`,inline:true});
-  embed.addFields({name:'📝 管理者メモ',value:notes.slice(0,1024)});
-  return interaction.reply({embeds:[embed],ephemeral:true});
+  return interaction.reply({embeds:[embed]});
 }
 
 async function search(interaction){
@@ -133,7 +130,7 @@ async function stats(interaction){
   const lines=s.byAction.map(x=>`${icon(x.action)} ${label(x.action)}: **${x.count}**`).join('\n')||'データなし';
   const embed=new EmbedBuilder().setTitle(`📊 ${user?`${user.tag} `:''}処罰統計`).setColor(0x5865f2)
     .addFields({name:'合計',value:`**${s.total}件**` ,inline:true},{name:'有効',value:`**${s.active}件**`,inline:true},{name:'種別',value:lines});
-  return interaction.reply({embeds:[embed],ephemeral:true});
+  return interaction.reply({embeds:[embed]});
 }
 function icon(a){return ({WARN:'⚠️',TIMEOUT:'🔇',KICK:'👢',BAN:'🔨',UNBAN:'🔓',UNTIMEOUT:'🔊'})[a]||'🛡️'}
 function label(a){return ({WARN:'Warn',TIMEOUT:'Timeout',KICK:'Kick',BAN:'Ban',UNBAN:'Unban',UNTIMEOUT:'Untimeout'})[a]||a}

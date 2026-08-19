@@ -123,3 +123,10 @@ AUDIT_LOG_CHANNEL_ID=123456789012345678
 Botには対象チャンネルで **View Channel / Send Messages / Embed Links** 権限が必要です。
 
 起動時にコンソールへ `📜 監査ログ送信先:` が表示されれば設定済みです。`/test` でも監査ログ設定を確認できます。
+
+## v1.2.5 - 公開Case履歴
+- `/moderation history` を公開表示に変更
+- `/moderation case` を公開表示に変更
+- Case IDをサーバー内の処罰履歴として他ユーザーも確認可能
+- `/moderation search` と `/moderation note` は引き続きモデレーター専用
+- 管理者メモは公開Case詳細には表示しない

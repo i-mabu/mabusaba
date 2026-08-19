@@ -1,6 +1,6 @@
 {
   "name": "mabusaba",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Discord community bot with games, moderation cases, audit logs, safe database migration and backups",
   "license": "ISC",
   "author": "",
