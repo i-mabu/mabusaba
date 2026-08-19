@@ -65,6 +65,33 @@ module.exports = {
           },
           {
             name:
+<<<<<<< Updated upstream
+=======
+              '🃏 ブラックジャック',
+            value:
+              'blackjack'
+          },
+          {
+            name:
+              '🎯 ルーレット',
+            value:
+              'roulette'
+          },
+          {
+            name:
+              '❓ クイズ',
+            value:
+              'quiz'
+          },
+          {
+            name:
+              '🔢 数字当て',
+            value:
+              'numberguess'
+          },
+          {
+            name:
+>>>>>>> Stashed changes
               '⚙️ システム',
             value:
               'system'

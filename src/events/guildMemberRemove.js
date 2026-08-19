@@ -13,6 +13,12 @@ module.exports = {
       );
 
       await sendAuditLog({
+<<<<<<< Updated upstream
+=======
+        type: 'MEMBER',
+        action: 'LEAVE',
+        target: member.user,
+>>>>>>> Stashed changes
         guild:
           member.guild,
 

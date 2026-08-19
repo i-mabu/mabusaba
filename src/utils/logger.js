@@ -1,46 +1,16 @@
-const {
-  EmbedBuilder,
-} = require('discord.js');
+const { sendAuditLog: send } = require('./auditLog');
 
-async function sendAuditLog(
-  guild,
-  {
-    title,
-    description,
-    color = 0x5865f2,
-    fields = [],
-  }
-) {
-  const channelId =
-    process.env.MOD_LOG_CHANNEL_ID ||
-    process.env.LOG_CHANNEL_ID;
-
-  if (!channelId) return;
-
-  const channel =
-    guild.channels.cache.get(channelId);
-
-  if (!channel) return;
-
-  const embed = new EmbedBuilder()
-    .setTitle(title)
-    .setDescription(description || null)
-    .setColor(color)
-    .addFields(fields)
-    .setTimestamp();
-
-  try {
-    await channel.send({
-      embeds: [embed],
-    });
-  } catch (error) {
-    console.error(
-      '監査ログ送信エラー:',
-      error
-    );
-  }
+/*
+ * 旧コマンド互換ラッパー。
+ * sendAuditLog(guild, { ... }) の形式も引き続き利用できます。
+ */
+async function sendAuditLog(guild, options = {}) {
+  return send({
+    guild,
+    ...options,
+    actor: options.actor || null,
+    reason: options.reason || null,
+  });
 }
 
-module.exports = {
-  sendAuditLog,
-};
+module.exports = { sendAuditLog };

@@ -1,4 +1,11 @@
 const POINT_RULES = {
+<<<<<<< Updated upstream
+=======
+  blackjack: { win: 25, lose: -10, draw: 5 },
+  roulette: { win: 20, lose: -10 },
+  quiz: { win: 15, lose: -5 },
+  numberguess: { win: 20, lose: -5 },
+>>>>>>> Stashed changes
   dice: {
     win: 10,
     lose: -5,

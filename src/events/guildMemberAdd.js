@@ -57,6 +57,13 @@ module.exports = {
 
     try {
       await sendAuditLog({
+<<<<<<< Updated upstream
+=======
+        type: 'MEMBER',
+        action: 'JOIN',
+        actor: member.user,
+        target: member.user,
+>>>>>>> Stashed changes
         guild:
           member.guild,
 
@@ -207,6 +214,13 @@ async function handleAutoRole(
   );
 
   await sendAuditLog({
+<<<<<<< Updated upstream
+=======
+    type: 'MEMBER',
+    action: 'AUTO_ROLE_ADD',
+    actor: null,
+    target: member.user,
+>>>>>>> Stashed changes
     guild:
       member.guild,
 
