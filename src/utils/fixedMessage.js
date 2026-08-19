@@ -8,7 +8,7 @@ const path = require('path');
  * =========================================================
  */
 
-const dataDir = path.join(__dirname, '../data');
+const dataDir = path.resolve(process.env.MABUSABA_DATA_DIR || path.join(__dirname, '../data'));
 
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, {
@@ -18,7 +18,7 @@ if (!fs.existsSync(dataDir)) {
 
 const dbPath = path.join(
   dataDir,
-  'games.db'
+  'moderation.db'
 );
 
 const db = new Database(dbPath);

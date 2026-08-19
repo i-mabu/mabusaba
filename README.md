@@ -1,132 +1,74 @@
-# mabusaba 改良版
+# mabusaba Main Bot
 
-Discord.js v14 + SQLite (`better-sqlite3`) のコミュニティBotです。
+`mabusaba` の**モデレーション／サーバー管理専用ボット**です。ゲーム機能は `mabusaba-game` に分離されており、両ボットは別々の Discord Application、Bot Token、Client ID を使用します。同じ Discord サーバーへ両方を導入することは可能です。
 
-## 主な追加機能
+## 対応範囲
 
-### モデレーション
-- `/moderation history user:@user` — 処罰履歴（ページング）
-- `/moderation case id:123` — Case詳細
-- `/moderation search query:...` — Case検索
-- `/moderation stats [user]` — 処罰統計
-- `/moderation note id:123` — 管理者メモ
-- `/warn`, `/mute`, `/kick`, `/ban`, `/unmute`, `/unban`
-- すべての処罰にCase IDを付与
-- 処罰情報を `src/data/moderation.db` に保存
+| 区分 | 内容 |
+| --- | --- |
+| コマンド | `/moderation`、`/warn`、`/mute`、`/ban`、`/kick`、`/unmute`、`/unban`、`/clear`、`/welcome`、`/fixed-message`、`/audit-log` など |
+| 永続化 | `moderation.db` にモデレーション Case、監査ログ、Welcome／固定メッセージ設定を保存 |
+| Node.js | `>=20 <27` |
+| データ保護 | 起動前の整合性確認、WAL チェックポイントを考慮したバックアップ、加算型スキーマ移行 |
 
-### 監査ログ
-Bot独自の監査ログDBに以下を保存します。
-- MEMBER
-- MODERATION
-- MESSAGE
-- CHANNEL
-- ROLE
-- BOT
-- GAME
-- SYSTEM
+> **ゲームデータは本プロジェクトでは変更しません。** 既存の `games.db` はゲームボット側へコピーして利用してください。
 
-検索:
-`/audit-log [type] [query] [user]`
+## セットアップ
 
-ログ送信先は以下の環境変数を上から順に使用します。
-
-```env
-AUDIT_LOG_CHANNEL_ID=
-MOD_LOG_CHANNEL_ID=
-LOG_CHANNEL_ID=
-```
-
-### ゲーム
-既存の `/game` を維持しつつ、以下を追加。
-
-`/game-plus blackjack`
-`/game-plus roulette`
-`/game-plus quiz`
-`/game-plus numberguess`
-
-結果は既存のゲームポイント・ゲームログへ記録されます。
-
-## 起動
+Node.js 20 以上を用意し、依存関係をロックファイルどおりに導入したうえで、環境変数を設定します。`DISCORD_TOKEN`、`CLIENT_ID`、`GUILD_ID` は Main Bot 用の値を使用してください。
 
 ```bash
-npm install
+cp .env.example .env
+npm ci
 npm run deploy
 npm start
 ```
 
-`.env`:
-
 ```env
-DISCORD_TOKEN=YOUR_BOT_TOKEN
-CLIENT_ID=YOUR_APPLICATION_ID
-GUILD_ID=YOUR_TEST_GUILD_ID
-
-AUDIT_LOG_CHANNEL_ID=123456789012345678
-AUTO_ROLE_ID=YOUR_ROLE_ID
+DISCORD_TOKEN=YOUR_MAIN_BOT_TOKEN
+CLIENT_ID=YOUR_MAIN_APPLICATION_ID
+GUILD_ID=YOUR_GUILD_ID
+WELCOME_CHANNEL_ID=
+AUDIT_LOG_CHANNEL_ID=
+AUTO_ROLE_ID=
+DB_BACKUP_ON_START=true
+DB_BACKUP_RETENTION=10
 ```
 
-`deploy-commands.js` の既存設定に合わせて `CLIENT_ID` / `GUILD_ID` を設定してください。
+Discord Developer Portal では、本ボットが必要とする **Server Members Intent**、**Message Content Intent** を有効化してください。また、運用する機能に応じて Moderate Members、Ban Members、Kick Members、Manage Messages、View Audit Log、Embed Links などの権限を付与してください。
 
-## 注意
+## データベース分離と移行
 
-- SQLite DBは実行時に自動作成されます。
-- `src/data/*.db` はGit管理対象外です。
-- Botには必要な権限（Moderate Members / Ban Members / Kick Members / View Audit Log / Embed Links等）を付与してください。
+v1.2.7 修正版では、Main Bot は `src/data/moderation.db` のみを運用DBとして扱います。旧構成で `games.db` に保存されていた `fixed_messages` と `welcome_messages` は、初回起動時に `moderation.db` へ**追加のみ**で取り込みます。すでに新DBに存在するサーバー設定は上書きされず、元の `games.db` は削除・変更されません。
 
-## DB自動移行・バックアップ
+| データ | 保存先 | Main Bot の扱い |
+| --- | --- | --- |
+| モデレーション Case・監査ログ | `src/data/moderation.db` | 読み書きする |
+| Welcome・固定メッセージ設定 | `src/data/moderation.db` | 読み書きする |
+| ポイント・ゲーム履歴 | `src/data/games.db` | 変更しない。Game Bot へ移行する |
 
-v1.2.2では起動時にSQLiteの整合性を確認し、旧版の `games.db` に不足している列・インデックスを追加する安全な加算型マイグレーションを実行します。既存行は削除・上書きしません。
+バックアップは標準で `src/data/backups/<timestamp>/` に保存されます。保持世代数は `DB_BACKUP_RETENTION` で変更できます。実データに触れず検証したい場合だけ、`MABUSABA_DATA_DIR` に別ディレクトリを指定できます。
 
-### バックアップ
+## 品質確認
 
-デフォルトで起動前の既存DBを `src/data/backups/YYYYMMDDTHHMMSSZ/` にバックアップします。保持数は `DB_BACKUP_RETENTION`（既定10世代）で設定できます。
-
-### 手動確認
+以下のコマンドは外部サービスへ接続せずに実行できます。`npm test` は一時ディレクトリで、旧設定の安全な移行、DBの分離、再実行時の冪等性を確認します。
 
 ```bash
+npm run check
+npm test
 npm run db:check
-```
-
-### 手動バックアップ＋移行
-
-```bash
 npm run db:backup
 ```
 
-### 互換性について
+## コンテナ実行
 
-- v1.1.x以前の `games.db` は既存の `users` / `game_logs` データを維持して利用します。
-- 不足列がある場合のみ `ALTER TABLE ... ADD COLUMN` で補完します。
-- 主キー構造そのものが壊れているDBは自動変換せず停止し、バックアップからの復元を促します。
-- `moderation.db` はv1.2.0以降のCase・監査ログDBとして自動生成/更新されます。
+`.env` を設定済みであれば、次のコマンドで起動できます。ホスト側の `src/data` がコンテナ内へマウントされるため、SQLite データはコンテナ再作成後も保持されます。
 
-
-## 旧版DB互換性確認
-
-v1.2.2では起動前に既存DBをバックアップし、SQLite整合性を確認したうえで加算型マイグレーションを行います。
-`games.db` の既存 `users` / `game_logs` / `fixed_messages` / `welcome_messages` の行数を移行前後で比較し、既存データが減少した場合は起動を停止します。
-主キーなど自動変更できない構造差は安全側に倒して停止します。
-
-バックアップは `src/data/backups/` に世代別で保存され、既定で10世代保持します。WAL利用中はチェックポイントを試行し、失敗時には `.db` と `.db-wal` / `.db-shm` をセットで保存します。
-
-
-## 監査ログの設定
-
-`.env` の `AUDIT_LOG_CHANNEL_ID` に、監査ログを送信したいDiscordチャンネルのIDを設定してください。
-
-```env
-AUDIT_LOG_CHANNEL_ID=123456789012345678
+```bash
+docker compose build
+docker compose up -d
 ```
 
-旧版との互換性のため `MOD_LOG_CHANNEL_ID` / `LOG_CHANNEL_ID` も利用できます。優先順位は `AUDIT_LOG_CHANNEL_ID` → `MOD_LOG_CHANNEL_ID` → `LOG_CHANNEL_ID` です。
+## 運用上の注意
 
-Botには対象チャンネルで **View Channel / Send Messages / Embed Links** 権限が必要です。
-
-起動時にコンソールへ `📜 監査ログ送信先:` が表示されれば設定済みです。`/test` でも監査ログ設定を確認できます。
-
-## v1.2.5 - 公開Case履歴
-- `/moderation history` を公開表示に変更
-- `/moderation case` を公開表示に変更
-- Case IDをサーバー内の処罰履歴として他ユーザーも確認可能
-- `/moderation search` と `/moderation note` は引き続きモデレーター専用
-- 管理者メモは公開Case詳細には表示しない
+本ボットと Game Bot は**必ず別トークン**で運用してください。既存ゲームデータを引き継ぐ場合は、Main Bot の `src/data/games.db` を Game Bot プロジェクトの `src/data/games.db` へコピーしてから Game Bot を起動してください。移行前に両ボットを停止し、元のDBファイルを別の場所へバックアップしておくことを推奨します。

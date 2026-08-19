@@ -2,36 +2,11 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 
-const DATA_DIR = path.join(__dirname, '../data');
+const DATA_DIR = path.resolve(process.env.MABUSABA_DATA_DIR || path.join(__dirname, '../data'));
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-const DB_FILES = ['games.db', 'moderation.db'];
-const COMPAT_TABLES = ['users', 'game_logs', 'fixed_messages', 'welcome_messages'];
+const MODERATION_DB_FILE = 'moderation.db';
+const LEGACY_GAME_DB_FILE = 'games.db';
 const RETENTION = Math.max(1, Number(process.env.DB_BACKUP_RETENTION || 10));
-
-const REQUIRED = {
-  users: {
-    user_id: "TEXT PRIMARY KEY",
-    username: "TEXT NOT NULL DEFAULT ''",
-    points: 'INTEGER NOT NULL DEFAULT 100',
-    games: 'INTEGER NOT NULL DEFAULT 0',
-    wins: 'INTEGER NOT NULL DEFAULT 0',
-    losses: 'INTEGER NOT NULL DEFAULT 0',
-    created_at: 'INTEGER NOT NULL DEFAULT (unixepoch())',
-    updated_at: 'INTEGER NOT NULL DEFAULT (unixepoch())',
-  },
-  game_logs: {
-    id: 'INTEGER PRIMARY KEY AUTOINCREMENT',
-    user_id: 'TEXT NOT NULL',
-    username: "TEXT NOT NULL DEFAULT ''",
-    game: 'TEXT NOT NULL',
-    result: 'TEXT NOT NULL',
-    points_before: 'INTEGER NOT NULL DEFAULT 0',
-    points_change: 'INTEGER NOT NULL DEFAULT 0',
-    points_after: 'INTEGER NOT NULL DEFAULT 0',
-    created_at: 'INTEGER NOT NULL DEFAULT (unixepoch())',
-    metadata: 'TEXT',
-  },
-};
 
 const MODERATION_REQUIRED = {
   moderation_cases: {
@@ -52,6 +27,21 @@ const MODERATION_REQUIRED = {
   },
 };
 
+const CONFIG_REQUIRED = {
+  fixed_messages: {
+    guild_id: 'TEXT PRIMARY KEY', channel_id: 'TEXT NOT NULL', message_id: 'TEXT NOT NULL',
+    content: "TEXT NOT NULL DEFAULT ''", embed_title: 'TEXT', embed_description: 'TEXT', embed_color: 'TEXT',
+    embed_data: 'TEXT', created_by: 'TEXT NOT NULL', updated_by: 'TEXT NOT NULL',
+    created_at: 'INTEGER NOT NULL DEFAULT (unixepoch())', updated_at: 'INTEGER NOT NULL DEFAULT (unixepoch())',
+  },
+  welcome_messages: {
+    guild_id: 'TEXT PRIMARY KEY', channel_id: 'TEXT NOT NULL', content: "TEXT NOT NULL DEFAULT ''",
+    embed_title: 'TEXT', embed_description: 'TEXT', embed_color: 'TEXT', embed_data: 'TEXT',
+    created_by: 'TEXT NOT NULL', updated_by: 'TEXT NOT NULL',
+    created_at: 'INTEGER NOT NULL DEFAULT (unixepoch())', updated_at: 'INTEGER NOT NULL DEFAULT (unixepoch())',
+  },
+};
+
 function ensureDir() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -66,7 +56,7 @@ function tableExists(db, table) {
 
 function columns(db, table) {
   if (!tableExists(db, table)) return new Set();
-  return new Set(db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all().map(c => c.name));
+  return new Set(db.prepare(`PRAGMA table_info(${quoteIdentifier(table)})`).all().map(column => column.name));
 }
 
 function createTable(db, table, schema) {
@@ -79,11 +69,11 @@ function addMissingColumns(db, table, schema) {
     createTable(db, table, schema);
     return { created: true, added: [] };
   }
+
   const existing = columns(db, table);
   const added = [];
   for (const [name, type] of Object.entries(schema)) {
     if (existing.has(name)) continue;
-    // SQLite cannot safely add a new PRIMARY KEY/AUTOINCREMENT column to an existing table.
     if (/PRIMARY KEY|AUTOINCREMENT/i.test(type)) {
       throw new Error(`既存テーブル ${table} に必須キー列 ${name} がありません。自動変換できないため停止しました。`);
     }
@@ -93,20 +83,15 @@ function addMissingColumns(db, table, schema) {
   return { created: false, added };
 }
 
-function ensureIndexes(db) {
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_game_logs_user_id ON game_logs(user_id);
-    CREATE INDEX IF NOT EXISTS idx_game_logs_game ON game_logs(game);
-    CREATE INDEX IF NOT EXISTS idx_game_logs_result ON game_logs(result);
-    CREATE INDEX IF NOT EXISTS idx_game_logs_created_at ON game_logs(created_at);
-  `);
-}
-
-function ensureModerationSchema(db) {
+function ensureMainSchema(db) {
   const changes = {};
   for (const [table, schema] of Object.entries(MODERATION_REQUIRED)) {
     changes[table] = addMissingColumns(db, table, schema);
   }
+  for (const [table, schema] of Object.entries(CONFIG_REQUIRED)) {
+    changes[table] = addMissingColumns(db, table, schema);
+  }
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_cases_guild_user ON moderation_cases(guild_id, user_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_cases_guild_action ON moderation_cases(guild_id, action, created_at DESC);
@@ -119,15 +104,6 @@ function ensureModerationSchema(db) {
   return changes;
 }
 
-function migrateGames(db) {
-  const changes = {};
-  for (const [table, schema] of Object.entries(REQUIRED)) {
-    changes[table] = addMissingColumns(db, table, schema);
-  }
-  ensureIndexes(db);
-  return changes;
-}
-
 function backupDatabase(filePath, timestamp) {
   if (!fs.existsSync(filePath)) return null;
 
@@ -136,9 +112,6 @@ function backupDatabase(filePath, timestamp) {
   const dir = path.join(BACKUP_DIR, timestamp);
   fs.mkdirSync(dir, { recursive: true });
 
-  // SQLiteのWALを使っているDBは、.dbだけをコピーすると
-  // 最新トランザクションを失う可能性があるため、可能なら先に
-  // WALをチェックポイントしてからDB本体をバックアップする。
   let checkpointed = false;
   try {
     const db = new Database(filePath);
@@ -155,33 +128,26 @@ function backupDatabase(filePath, timestamp) {
 
   const destination = path.join(dir, `${name}.db`);
   fs.copyFileSync(filePath, destination);
-
-  // チェックポイントできなかった場合はWAL/SHMもセットで保存。
   if (!checkpointed) {
     for (const suffix of ['-wal', '-shm']) {
       const sidecar = `${filePath}${suffix}`;
       if (fs.existsSync(sidecar)) fs.copyFileSync(sidecar, `${destination}${suffix}`);
     }
   }
-
   return destination;
 }
 
 function backupExistingDatabases(timestamp) {
-  const result = [];
-  for (const file of DB_FILES) {
-    const target = path.join(DATA_DIR, file);
-    const backup = backupDatabase(target, timestamp);
-    if (backup) result.push(backup);
-  }
-  return result;
+  return [MODERATION_DB_FILE, LEGACY_GAME_DB_FILE]
+    .map(file => backupDatabase(path.join(DATA_DIR, file), timestamp))
+    .filter(Boolean);
 }
 
 function pruneBackups() {
   if (!fs.existsSync(BACKUP_DIR)) return;
   const dirs = fs.readdirSync(BACKUP_DIR, { withFileTypes: true })
-    .filter(e => e.isDirectory())
-    .map(e => e.name)
+    .filter(entry => entry.isDirectory())
+    .map(entry => entry.name)
     .sort()
     .reverse();
   for (const dir of dirs.slice(RETENTION)) {
@@ -200,30 +166,76 @@ function integrityCheck(filePath) {
   }
 }
 
-function getSchemaSummary(db, tables) {
-  const summary = {};
-  for (const table of tables) summary[table] = [...columns(db, table)];
-  return summary;
-}
-
 function tableRowCount(db, table) {
   if (!tableExists(db, table)) return null;
   return db.prepare(`SELECT COUNT(*) AS count FROM ${quoteIdentifier(table)}`).get().count;
 }
 
 function snapshotCounts(db, tables) {
-  const result = {};
-  for (const table of tables) result[table] = tableRowCount(db, table);
-  return result;
+  return Object.fromEntries(tables.map(table => [table, tableRowCount(db, table)]));
 }
 
 function verifyCountsUnchanged(before, after, file) {
   for (const [table, count] of Object.entries(before)) {
-    if (count === null) continue;
-    if (after[table] !== count) {
+    if (count !== null && after[table] !== count) {
       throw new Error(`互換性チェック失敗: ${file} の ${table} 件数が ${count} → ${after[table]} に変化しました。`);
     }
   }
+}
+
+function migrateLegacyConfiguration(targetDb) {
+  const legacyPath = path.join(DATA_DIR, LEGACY_GAME_DB_FILE);
+  const result = {
+    source: legacyPath,
+    fixedMessages: { found: 0, imported: 0, alreadyPresent: 0 },
+    welcomeMessages: { found: 0, imported: 0, alreadyPresent: 0 },
+  };
+  if (!fs.existsSync(legacyPath)) return result;
+
+  const legacyDb = new Database(legacyPath, { readonly: true });
+  try {
+    if (tableExists(legacyDb, 'fixed_messages')) {
+      const rows = legacyDb.prepare('SELECT * FROM fixed_messages').all();
+      const insert = targetDb.prepare(`
+        INSERT OR IGNORE INTO fixed_messages
+        (guild_id, channel_id, message_id, content, embed_title, embed_description, embed_color, embed_data, created_by, updated_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const row of rows) {
+        const info = insert.run(
+          row.guild_id, row.channel_id, row.message_id, row.content ?? '', row.embed_title ?? null,
+          row.embed_description ?? null, row.embed_color ?? null, row.embed_data ?? null,
+          row.created_by ?? 'legacy', row.updated_by ?? row.created_by ?? 'legacy',
+          row.created_at ?? Math.floor(Date.now() / 1000), row.updated_at ?? row.created_at ?? Math.floor(Date.now() / 1000)
+        );
+        result.fixedMessages.found += 1;
+        if (info.changes) result.fixedMessages.imported += 1;
+        else result.fixedMessages.alreadyPresent += 1;
+      }
+    }
+
+    if (tableExists(legacyDb, 'welcome_messages')) {
+      const rows = legacyDb.prepare('SELECT * FROM welcome_messages').all();
+      const insert = targetDb.prepare(`
+        INSERT OR IGNORE INTO welcome_messages
+        (guild_id, channel_id, content, embed_title, embed_description, embed_color, embed_data, created_by, updated_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const row of rows) {
+        const info = insert.run(
+          row.guild_id, row.channel_id, row.content ?? '', row.embed_title ?? null, row.embed_description ?? null,
+          row.embed_color ?? null, row.embed_data ?? null, row.created_by ?? 'legacy', row.updated_by ?? row.created_by ?? 'legacy',
+          row.created_at ?? Math.floor(Date.now() / 1000), row.updated_at ?? row.created_at ?? Math.floor(Date.now() / 1000)
+        );
+        result.welcomeMessages.found += 1;
+        if (info.changes) result.welcomeMessages.imported += 1;
+        else result.welcomeMessages.alreadyPresent += 1;
+      }
+    }
+  } finally {
+    legacyDb.close();
+  }
+  return result;
 }
 
 function migrateDatabase() {
@@ -231,76 +243,62 @@ function migrateDatabase() {
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
   const shouldBackup = String(process.env.DB_BACKUP_ON_START ?? 'true').toLowerCase() !== 'false';
   const backups = shouldBackup ? backupExistingDatabases(timestamp) : [];
-  const beforeChecks = DB_FILES.map(file => ({ file, ...integrityCheck(path.join(DATA_DIR, file)) }));
-
-  const broken = beforeChecks.filter(x => x.exists && !x.ok);
+  const files = [MODERATION_DB_FILE, LEGACY_GAME_DB_FILE];
+  const beforeChecks = files.map(file => ({ file, ...integrityCheck(path.join(DATA_DIR, file)) }));
+  const broken = beforeChecks.filter(item => item.exists && !item.ok);
   if (broken.length) {
-    throw new Error(`SQLite整合性チェック失敗: ${broken.map(x => `${x.file}=${x.result}`).join(', ')}。バックアップは保存済みです。`);
+    throw new Error(`SQLite整合性チェック失敗: ${broken.map(item => `${item.file}=${item.result}`).join(', ')}。バックアップは保存済みです。`);
   }
 
-  const compatibility = { gamesBefore: {}, gamesAfter: {}, moderationBefore: {}, moderationAfter: {} };
-  const migration = { games: {}, moderation: {} };
-
-  const gamesPath = path.join(DATA_DIR, 'games.db');
-  const games = new Database(gamesPath);
+  const moderationPath = path.join(DATA_DIR, MODERATION_DB_FILE);
+  const db = new Database(moderationPath);
+  const compatibility = { before: {}, after: {} };
+  let migration;
+  let legacy;
   try {
-    games.pragma('busy_timeout = 5000');
-    games.exec('BEGIN');
-    compatibility.gamesBefore = snapshotCounts(games, COMPAT_TABLES);
-    migration.games = migrateGames(games);
-    compatibility.gamesAfter = snapshotCounts(games, COMPAT_TABLES);
-    verifyCountsUnchanged(compatibility.gamesBefore, compatibility.gamesAfter, 'games.db');
-    games.exec('COMMIT');
-    games.pragma('wal_checkpoint(TRUNCATE)');
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    db.pragma('busy_timeout = 5000');
+    db.exec('BEGIN');
+    const moderationTables = Object.keys(MODERATION_REQUIRED);
+    const allTables = [...moderationTables, ...Object.keys(CONFIG_REQUIRED)];
+    compatibility.before = snapshotCounts(db, allTables);
+    const moderationBefore = snapshotCounts(db, moderationTables);
+    migration = ensureMainSchema(db);
+    legacy = migrateLegacyConfiguration(db);
+    compatibility.after = snapshotCounts(db, allTables);
+    verifyCountsUnchanged(moderationBefore, compatibility.after, MODERATION_DB_FILE);
+    db.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+    db.prepare(`INSERT INTO schema_meta(key,value) VALUES('schema_version','3') ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
+    db.prepare(`INSERT INTO schema_meta(key,value) VALUES('last_migrated_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(new Date().toISOString());
+    db.exec('COMMIT');
+    db.pragma('wal_checkpoint(TRUNCATE)');
   } catch (error) {
-    try { games.exec('ROLLBACK'); } catch {}
+    try { db.exec('ROLLBACK'); } catch {}
     throw error;
   } finally {
-    games.close();
-  }
-
-  const moderationPath = path.join(DATA_DIR, 'moderation.db');
-  const moderation = new Database(moderationPath);
-  try {
-    moderation.pragma('journal_mode = WAL');
-    moderation.pragma('foreign_keys = ON');
-    moderation.pragma('busy_timeout = 5000');
-    moderation.exec('BEGIN');
-    compatibility.moderationBefore = snapshotCounts(moderation, Object.keys(MODERATION_REQUIRED));
-    migration.moderation = ensureModerationSchema(moderation);
-    moderation.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
-    moderation.prepare(`INSERT INTO schema_meta(key,value) VALUES('schema_version','2') ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run();
-    compatibility.moderationAfter = snapshotCounts(moderation, Object.keys(MODERATION_REQUIRED));
-    verifyCountsUnchanged(compatibility.moderationBefore, compatibility.moderationAfter, 'moderation.db');
-    moderation.prepare(`INSERT INTO schema_meta(key,value) VALUES('last_migrated_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`).run(new Date().toISOString());
-    moderation.exec('COMMIT');
-    moderation.pragma('wal_checkpoint(TRUNCATE)');
-  } catch (error) {
-    try { moderation.exec('ROLLBACK'); } catch {}
-    throw error;
-  } finally {
-    moderation.close();
+    db.close();
   }
 
   pruneBackups();
+  const afterChecks = files.map(file => ({ file, ...integrityCheck(path.join(DATA_DIR, file)) }));
+  const failed = afterChecks.filter(item => item.exists && !item.ok);
+  if (failed.length) throw new Error(`移行後のSQLite整合性チェック失敗: ${failed.map(item => `${item.file}=${item.result}`).join(', ')}`);
 
-  const afterChecks = DB_FILES.map(file => ({ file, ...integrityCheck(path.join(DATA_DIR, file)) }));
-  const failed = afterChecks.filter(x => !x.ok);
-  if (failed.length) throw new Error(`移行後のSQLite整合性チェック失敗: ${failed.map(x => `${x.file}=${x.result}`).join(', ')}`);
-
-  return { timestamp, backups, beforeChecks, afterChecks, migration, compatibility, backupDir: BACKUP_DIR };
+  return { timestamp, backups, beforeChecks, afterChecks, migration, compatibility, legacy, backupDir: BACKUP_DIR };
 }
 
 function printReport(report) {
-  console.log('🗄️ DB互換性チェック / 自動移行');
-  for (const item of report.beforeChecks) console.log(`  ${item.file}: ${item.exists ? (item.ok ? 'OK' : 'NG') : '新規作成'}`);
+  console.log('🗄️ Main Bot DB移行');
+  for (const item of report.beforeChecks) console.log(`  ${item.file}: ${item.exists ? (item.ok ? 'OK' : 'NG') : '未作成'}`);
   if (report.backups.length) console.log(`  💾 バックアップ: ${report.backups.join(', ')}`);
-  for (const [group, changes] of Object.entries(report.migration)) {
-    const changed = Object.entries(changes).filter(([, v]) => v.created || v.added?.length);
-    if (!changed.length) console.log(`  ✅ ${group}: 既存スキーマ互換`);
-    else console.log(`  🔧 ${group}: ${JSON.stringify(changes)}`);
+  const changed = Object.entries(report.migration).filter(([, value]) => value.created || value.added?.length);
+  console.log(changed.length ? `  🔧 スキーマ更新: ${JSON.stringify(Object.fromEntries(changed))}` : '  ✅ スキーマ互換');
+  const { fixedMessages, welcomeMessages } = report.legacy;
+  if (fixedMessages.found || welcomeMessages.found) {
+    console.log(`  📦 旧設定移行: fixed=${fixedMessages.imported}/${fixedMessages.found}, welcome=${welcomeMessages.imported}/${welcomeMessages.found}`);
   }
-  for (const item of report.afterChecks) console.log(`  ${item.file}: ${item.ok ? '整合性OK' : '整合性NG'}`);
+  for (const item of report.afterChecks) console.log(`  ${item.file}: ${item.exists ? (item.ok ? '整合性OK' : '整合性NG') : '未作成'}`);
 }
 
 if (require.main === module) {
