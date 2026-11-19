@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mabusaba.pages.dev/sitemap.xml
+Sitemap: https://mabusaba.vercel.app/sitemap.xml

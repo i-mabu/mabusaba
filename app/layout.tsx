@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 
-const SITE_URL = "https://mabusaba.pages.dev";
+const SITE_URL = "https://mabusaba.vercel.app";
 const DESCRIPTION =
   "まぶ鯖は、自分のペースで楽しめる公開Discordコミュニティです。雑談・ゲーム・音楽・画像動画・スレッド自由。ROM専・覗くだけ・初見さん大歓迎。公式X @mabu_saba / 公式noteでも発信しています。";
 
