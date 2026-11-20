@@ -46,10 +46,13 @@ const JSON_LD = {
   ],
 };
 
+const THEME_INIT_SCRIPT = `(function(){try{var savedTheme=localStorage.getItem("mabusaba-theme");if(savedTheme==="light"||savedTheme==="dark"){document.documentElement.setAttribute("data-theme",savedTheme);}else{document.documentElement.setAttribute("data-theme","dark");}}catch(e){document.documentElement.setAttribute("data-theme","dark");}})();`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="ja">
+    <html lang="ja" data-theme="dark" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           rel="preconnect"

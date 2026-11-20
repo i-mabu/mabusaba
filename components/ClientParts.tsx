@@ -78,7 +78,41 @@ export function ScrollReveal() {
   return null;
 }
 
-// ===== 3. フッターの年表示 =====
+// ===== 3. テーマ切り替え（ダーク / ライト） =====
+export function ThemeToggle() {
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+
+  useEffect(() => {
+    const current = document.documentElement.getAttribute("data-theme");
+    setTheme(current === "light" ? "light" : "dark");
+  }, []);
+
+  function toggle() {
+    const root = document.documentElement;
+    const next =
+      root.getAttribute("data-theme") === "light" ? "dark" : "light";
+    root.setAttribute("data-theme", next);
+    setTheme(next);
+    try {
+      localStorage.setItem("mabusaba-theme", next);
+    } catch {
+      // 保存できなくても切り替え自体は有効
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={toggle}
+      aria-label="テーマ切り替え"
+    >
+      {theme === "light" ? "☀️" : "🌙"}
+    </button>
+  );
+}
+
+// ===== 4. フッターの年表示 =====
 export function CurrentYear() {
   const [year, setYear] = useState(2026);
   useEffect(() => {

@@ -2,6 +2,7 @@ import {
   CopyInviteButton,
   CurrentYear,
   ScrollReveal,
+  ThemeToggle,
 } from "@/components/ClientParts";
 
 const INVITE = "https://discord.gg/GKkW4wCAVp";
@@ -42,6 +43,7 @@ export default function Home() {
             <a href="#rules">安心の取り組み</a>
             <a href="#faq">FAQ</a>
           </nav>
+          <ThemeToggle />
           <a
             className="btn btn-discord btn-small header-cta"
             href={INVITE}
