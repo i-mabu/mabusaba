@@ -158,7 +158,7 @@ export default function Home() {
             <div className="section-head reveal">
               <div className="kicker">OFFICIAL MEDIA</div>
               <h2>公式メディア</h2>
-              <p>まぶ鯖は3つの場所で運営しています。まずは眺めるだけでもどうぞ。</p>
+              <p>まぶ鯖は Discord と X で運営しています（note は開設準備中）。まずは眺めるだけでもどうぞ。</p>
             </div>
             <div className="media-cards reveal">
               <a className="media-card" href={INVITE} target="_blank" rel="noopener">

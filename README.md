@@ -28,7 +28,7 @@ next.config.mjs         静的書き出し（output: "export"）
 
 - プロジェクト: Vercel（個人アカウント i-mabu、Hobby プラン）の `mabusaba`
 - 本番 URL: [mabusaba.vercel.app](https://mabusaba.vercel.app/)
-- GitHub リポジトリ `i-mabu/mabusaba` と連携済みです
+- GitHub リポジトリ `mabu-works/mabusaba` と連携済みです
 
 ### 通常の更新
 
